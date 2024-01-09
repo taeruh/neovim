@@ -1,0 +1,14 @@
+# Maintainer: Jannis Ruh <ruh.j81@gmail.com>
+
+pkgname=neovim-l
+pkgver=$(nvim --version | head -n 1 | cut -d ' ' -f2 | sed -e 's/^v//' -e 's/\-/+/g')
+pkgrel=1
+arch=('x86_64')
+provides=("neovim=${pkgver}" 'vim-plugin-runtime')
+conflicts=("neovim")
+source=("dummy.tar")
+b2sums=('SKIP')
+
+package() {
+  echo "just a dummy package; the makefile does everything"
+}
