@@ -8,6 +8,7 @@ local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
 local Screen = require('test.functional.ui.screen')
 local eq = helpers.eq
+local feed_command = helpers.feed_command
 local feed_data = thelpers.feed_data
 local clear = helpers.clear
 local command = helpers.command
@@ -20,8 +21,8 @@ local nvim_prog = helpers.nvim_prog
 local nvim_set = helpers.nvim_set
 local ok = helpers.ok
 local read_file = helpers.read_file
-local funcs = helpers.funcs
-local meths = helpers.meths
+local fn = helpers.fn
+local api = helpers.api
 local is_ci = helpers.is_ci
 local is_os = helpers.is_os
 local new_pipename = helpers.new_pipename
@@ -375,7 +376,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<65;8;1M')
     else
-      meths.input_mouse('wheel', 'down', '', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'down', '', 0, 0, 7)
     end
     screen:expect([[
       {11:  2 }{1:0}----1----2----3----4│{11:  1 }0----1----2----3----|
@@ -390,7 +391,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<65;48;1M')
     else
-      meths.input_mouse('wheel', 'down', '', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'down', '', 0, 0, 47)
     end
     screen:expect([[
       {11:  2 }{1:0}----1----2----3----4│{11:  2 }0----1----2----3----|
@@ -405,7 +406,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<67;8;1M')
     else
-      meths.input_mouse('wheel', 'right', '', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'right', '', 0, 0, 7)
     end
     screen:expect([[
       {11:  2 }{1:-}---1----2----3----4-│{11:  2 }0----1----2----3----|
@@ -420,7 +421,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<67;48;1M')
     else
-      meths.input_mouse('wheel', 'right', '', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'right', '', 0, 0, 47)
     end
     screen:expect([[
       {11:  2 }{1:-}---1----2----3----4-│{11:  2 }----1----2----3----4|
@@ -435,7 +436,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<69;8;1M')
     else
-      meths.input_mouse('wheel', 'down', 'S', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'down', 'S', 0, 0, 7)
     end
     screen:expect([[
       {11:  5 }{1:-}---1----2----3----4-│{11:  2 }----1----2----3----4|
@@ -450,7 +451,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<69;48;1M')
     else
-      meths.input_mouse('wheel', 'down', 'S', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'down', 'S', 0, 0, 47)
     end
     screen:expect([[
       {11:  5 }{1:-}---1----2----3----4-│{11:  5 }----1----2----3----4|
@@ -465,7 +466,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<71;8;1M')
     else
-      meths.input_mouse('wheel', 'right', 'S', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'right', 'S', 0, 0, 7)
     end
     screen:expect([[
       {11:  5 }{1:-}---6----7----8----9 │{11:  5 }----1----2----3----4|
@@ -480,7 +481,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<71;48;1M')
     else
-      meths.input_mouse('wheel', 'right', 'S', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'right', 'S', 0, 0, 47)
     end
     screen:expect([[
       {11:  5 }{1:-}---6----7----8----9 │{11:  5 }5----6----7----8----|
@@ -495,7 +496,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<64;8;1M')
     else
-      meths.input_mouse('wheel', 'up', '', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'up', '', 0, 0, 7)
     end
     screen:expect([[
       {11:  4 }----6----7----8----9 │{11:  5 }5----6----7----8----|
@@ -510,7 +511,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<64;48;1M')
     else
-      meths.input_mouse('wheel', 'up', '', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'up', '', 0, 0, 47)
     end
     screen:expect([[
       {11:  4 }----6----7----8----9 │{11:  4 }5----6----7----8----|
@@ -525,7 +526,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<66;8;1M')
     else
-      meths.input_mouse('wheel', 'left', '', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'left', '', 0, 0, 7)
     end
     screen:expect([[
       {11:  4 }5----6----7----8----9│{11:  4 }5----6----7----8----|
@@ -540,7 +541,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<66;48;1M')
     else
-      meths.input_mouse('wheel', 'left', '', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'left', '', 0, 0, 47)
     end
     screen:expect([[
       {11:  4 }5----6----7----8----9│{11:  4 }-5----6----7----8---|
@@ -555,7 +556,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<68;8;1M')
     else
-      meths.input_mouse('wheel', 'up', 'S', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'up', 'S', 0, 0, 7)
     end
     screen:expect([[
       {11:  1 }5----6----7----8----9│{11:  4 }-5----6----7----8---|
@@ -570,7 +571,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<68;48;1M')
     else
-      meths.input_mouse('wheel', 'up', 'S', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'up', 'S', 0, 0, 47)
     end
     screen:expect([[
       {11:  1 }5----6----7----8----9│{11:  1 }-5----6----7----8---|
@@ -585,7 +586,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<70;8;1M')
     else
-      meths.input_mouse('wheel', 'left', 'S', 0, 0, 7)
+      api.nvim_input_mouse('wheel', 'left', 'S', 0, 0, 7)
     end
     screen:expect([[
       {11:  1 }0----1----2----3----4│{11:  1 }-5----6----7----8---|
@@ -600,7 +601,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<70;48;1M')
     else
-      meths.input_mouse('wheel', 'left', 'S', 0, 0, 47)
+      api.nvim_input_mouse('wheel', 'left', 'S', 0, 0, 47)
     end
     screen:expect([[
       {11:  1 }0----1----2----3----4│{11:  1 }0----1----2----3----|
@@ -642,7 +643,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<2;5;1M')
     else
-      meths.input_mouse('right', 'press', '', 0, 0, 4)
+      api.nvim_input_mouse('right', 'press', '', 0, 0, 4)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -656,13 +657,13 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<2;5;1m')
     else
-      meths.input_mouse('right', 'release', '', 0, 0, 4)
+      api.nvim_input_mouse('right', 'release', '', 0, 0, 4)
     end
     screen:expect_unchanged()
     if esc then
       feed_data('\027[<35;7;4M')
     else
-      meths.input_mouse('move', '', '', 0, 3, 6)
+      api.nvim_input_mouse('move', '', '', 0, 3, 6)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -676,7 +677,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<0;7;3M')
     else
-      meths.input_mouse('left', 'press', '', 0, 2, 6)
+      api.nvim_input_mouse('left', 'press', '', 0, 2, 6)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -688,13 +689,13 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<0;7;3m')
     else
-      meths.input_mouse('left', 'release', '', 0, 2, 6)
+      api.nvim_input_mouse('left', 'release', '', 0, 2, 6)
     end
     screen:expect_unchanged()
     if esc then
       feed_data('\027[<2;45;3M')
     else
-      meths.input_mouse('right', 'press', '', 0, 2, 44)
+      api.nvim_input_mouse('right', 'press', '', 0, 2, 44)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -707,7 +708,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<34;48;6M')
     else
-      meths.input_mouse('right', 'drag', '', 0, 5, 47)
+      api.nvim_input_mouse('right', 'drag', '', 0, 5, 47)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -720,7 +721,7 @@ describe('TUI', function()
     if esc then
       feed_data('\027[<2;48;6m')
     else
-      meths.input_mouse('right', 'release', '', 0, 5, 47)
+      api.nvim_input_mouse('right', 'release', '', 0, 5, 47)
     end
     screen:expect([[
       {1:p}opup menu test                                   |
@@ -743,23 +744,23 @@ describe('TUI', function()
 
   it('accepts keypad keys from kitty keyboard protocol #19180', function()
     feed_data('i')
-    feed_data(funcs.nr2char(57399)) -- KP_0
-    feed_data(funcs.nr2char(57400)) -- KP_1
-    feed_data(funcs.nr2char(57401)) -- KP_2
-    feed_data(funcs.nr2char(57402)) -- KP_3
-    feed_data(funcs.nr2char(57403)) -- KP_4
-    feed_data(funcs.nr2char(57404)) -- KP_5
-    feed_data(funcs.nr2char(57405)) -- KP_6
-    feed_data(funcs.nr2char(57406)) -- KP_7
-    feed_data(funcs.nr2char(57407)) -- KP_8
-    feed_data(funcs.nr2char(57408)) -- KP_9
-    feed_data(funcs.nr2char(57409)) -- KP_DECIMAL
-    feed_data(funcs.nr2char(57410)) -- KP_DIVIDE
-    feed_data(funcs.nr2char(57411)) -- KP_MULTIPLY
-    feed_data(funcs.nr2char(57412)) -- KP_SUBTRACT
-    feed_data(funcs.nr2char(57413)) -- KP_ADD
-    feed_data(funcs.nr2char(57414)) -- KP_ENTER
-    feed_data(funcs.nr2char(57415)) -- KP_EQUAL
+    feed_data(fn.nr2char(57399)) -- KP_0
+    feed_data(fn.nr2char(57400)) -- KP_1
+    feed_data(fn.nr2char(57401)) -- KP_2
+    feed_data(fn.nr2char(57402)) -- KP_3
+    feed_data(fn.nr2char(57403)) -- KP_4
+    feed_data(fn.nr2char(57404)) -- KP_5
+    feed_data(fn.nr2char(57405)) -- KP_6
+    feed_data(fn.nr2char(57406)) -- KP_7
+    feed_data(fn.nr2char(57407)) -- KP_8
+    feed_data(fn.nr2char(57408)) -- KP_9
+    feed_data(fn.nr2char(57409)) -- KP_DECIMAL
+    feed_data(fn.nr2char(57410)) -- KP_DIVIDE
+    feed_data(fn.nr2char(57411)) -- KP_MULTIPLY
+    feed_data(fn.nr2char(57412)) -- KP_SUBTRACT
+    feed_data(fn.nr2char(57413)) -- KP_ADD
+    feed_data(fn.nr2char(57414)) -- KP_ENTER
+    feed_data(fn.nr2char(57415)) -- KP_EQUAL
     screen:expect([[
       0123456789./*-+                                   |
       ={1: }                                                |
@@ -768,7 +769,7 @@ describe('TUI', function()
       {3:-- INSERT --}                                      |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57417)) -- KP_LEFT
+    feed_data(fn.nr2char(57417)) -- KP_LEFT
     screen:expect([[
       0123456789./*-+                                   |
       {1:=}                                                 |
@@ -777,7 +778,7 @@ describe('TUI', function()
       {3:-- INSERT --}                                      |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57418)) -- KP_RIGHT
+    feed_data(fn.nr2char(57418)) -- KP_RIGHT
     screen:expect([[
       0123456789./*-+                                   |
       ={1: }                                                |
@@ -786,7 +787,7 @@ describe('TUI', function()
       {3:-- INSERT --}                                      |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57419)) -- KP_UP
+    feed_data(fn.nr2char(57419)) -- KP_UP
     screen:expect([[
       0{1:1}23456789./*-+                                   |
       =                                                 |
@@ -795,7 +796,7 @@ describe('TUI', function()
       {3:-- INSERT --}                                      |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57420)) -- KP_DOWN
+    feed_data(fn.nr2char(57420)) -- KP_DOWN
     screen:expect([[
       0123456789./*-+                                   |
       ={1: }                                                |
@@ -804,7 +805,7 @@ describe('TUI', function()
       {3:-- INSERT --}                                      |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57425)) -- KP_INSERT
+    feed_data(fn.nr2char(57425)) -- KP_INSERT
     screen:expect([[
       0123456789./*-+                                   |
       ={1: }                                                |
@@ -840,7 +841,7 @@ describe('TUI', function()
                                                         |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57426)) -- KP_DELETE
+    feed_data(fn.nr2char(57426)) -- KP_DELETE
     screen:expect([[
       0123456789{1:/}*-+                                    |
       =                                                 |
@@ -849,7 +850,7 @@ describe('TUI', function()
                                                         |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57423)) -- KP_HOME
+    feed_data(fn.nr2char(57423)) -- KP_HOME
     screen:expect([[
       {1:0}123456789/*-+                                    |
       =                                                 |
@@ -858,7 +859,7 @@ describe('TUI', function()
                                                         |
       {3:-- TERMINAL --}                                    |
     ]])
-    feed_data(funcs.nr2char(57424)) -- KP_END
+    feed_data(fn.nr2char(57424)) -- KP_END
     screen:expect([[
       0123456789/*-{1:+}                                    |
       =                                                 |
@@ -1903,7 +1904,7 @@ describe('TUI', function()
       [5] = { bold = true, reverse = true },
     })
     screen:attach()
-    funcs.termopen({
+    fn.termopen({
       nvim_prog,
       '--clean',
       '--cmd',
@@ -2126,7 +2127,7 @@ describe('TUI FocusGained/FocusLost', function()
       '--cmd',
       'colorscheme vim',
       '--cmd',
-      'set noswapfile noshowcmd noruler notermguicolors',
+      'set noswapfile noshowcmd noruler notermguicolors background=dark',
     })
 
     screen:expect([[
@@ -2776,10 +2777,73 @@ describe('TUI', function()
 end)
 
 describe('TUI bg color', function()
-  local screen
+  before_each(clear)
 
-  local function setup_bg_test()
-    clear()
+  local attr_ids = {
+    [1] = { reverse = true },
+    [2] = { bold = true },
+    [3] = { reverse = true, bold = true },
+    [4] = { foreground = tonumber('0x00000a') },
+  }
+
+  it('is properly set in a nested Nvim instance when background=dark', function()
+    command('highlight clear Normal')
+    command('set background=dark') -- set outer Nvim background
+    local screen = thelpers.setup_child_nvim({
+      '-u',
+      'NONE',
+      '-i',
+      'NONE',
+      '--cmd',
+      'colorscheme vim',
+      '--cmd',
+      'set noswapfile',
+    })
+    screen:set_default_attr_ids(attr_ids)
+    retry(nil, 30000, function() -- wait for automatic background processing
+      screen:sleep(20)
+      feed_command('set background?') -- check nested Nvim background
+      screen:expect([[
+      {1: }                                                 |
+      {2:~}                                                 |
+      {2:~}                                                 |
+      {2:~}                                                 |
+      {3:[No Name]                       0,0-1          All}|
+        background=dark                                 |
+      {4:-- TERMINAL --}                                    |
+      ]])
+    end)
+  end)
+
+  it('is properly set in a nested Nvim instance when background=light', function()
+    command('highlight clear Normal')
+    command('set background=light') -- set outer Nvim background
+    local screen = thelpers.setup_child_nvim({
+      '-u',
+      'NONE',
+      '-i',
+      'NONE',
+      '--cmd',
+      'colorscheme vim',
+      '--cmd',
+      'set noswapfile',
+    })
+    retry(nil, 30000, function() -- wait for automatic background processing
+      screen:sleep(20)
+      feed_command('set background?') -- check nested Nvim background
+      screen:expect([[
+      {1: }                                                 |
+      {3:~}                                                 |
+      {3:~}                                                 |
+      {3:~}                                                 |
+      {5:[No Name]                       0,0-1          All}|
+        background=light                                |
+      {3:-- TERMINAL --}                                    |
+      ]])
+    end)
+  end)
+
+  it('queries the terminal for background color', function()
     exec_lua([[
       vim.api.nvim_create_autocmd('TermRequest', {
         callback = function(args)
@@ -2791,8 +2855,7 @@ describe('TUI bg color', function()
         end,
       })
     ]])
-
-    screen = thelpers.setup_child_nvim({
+    thelpers.setup_child_nvim({
       '-u',
       'NONE',
       '-i',
@@ -2800,109 +2863,38 @@ describe('TUI bg color', function()
       '--cmd',
       'colorscheme vim',
       '--cmd',
-      'set noswapfile notermguicolors',
-      '-c',
-      'autocmd OptionSet background echo "did OptionSet, yay!"',
+      'set noswapfile',
     })
-  end
-
-  before_each(setup_bg_test)
-
-  it('queries the terminal for background color', function()
     retry(nil, 1000, function()
       eq(true, eval("get(g:, 'oscrequest', v:false)"))
     end)
   end)
 
-  it('triggers OptionSet event on unsplit terminal-response', function()
-    screen:expect([[
+  it('triggers OptionSet from automatic background processing', function()
+    local screen = thelpers.setup_child_nvim({
+      '-u',
+      'NONE',
+      '-i',
+      'NONE',
+      '--cmd',
+      'colorscheme vim',
+      '--cmd',
+      'set noswapfile',
+      '-c',
+      'autocmd OptionSet background echo "did OptionSet, yay!"',
+    })
+    retry(nil, 30000, function() -- wait for automatic background processing
+      screen:sleep(20)
+      screen:expect([[
       {1: }                                                 |
-      {4:~                                                 }|*3
+      {3:~}                                                 |
+      {3:~}                                                 |
+      {3:~}                                                 |
       {5:[No Name]                       0,0-1          All}|
-                                                        |
+      did OptionSet, yay!                               |
       {3:-- TERMINAL --}                                    |
-    ]])
-    feed_data('\027]11;rgb:ffff/ffff/ffff\027\\')
-    screen:expect { any = 'did OptionSet, yay!' }
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=light' }
-
-    setup_bg_test()
-    screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|*3
-      {5:[No Name]                       0,0-1          All}|
-                                                        |
-      {3:-- TERMINAL --}                                    |
-    ]])
-    feed_data('\027]11;rgba:ffff/ffff/ffff/8000\027\\')
-    screen:expect { any = 'did OptionSet, yay!' }
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=light' }
-  end)
-
-  it('triggers OptionSet event with split terminal-response', function()
-    screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|*3
-      {5:[No Name]                       0,0-1          All}|
-                                                        |
-      {3:-- TERMINAL --}                                    |
-    ]])
-    -- Send a background response with the OSC command part split.
-    feed_data('\027]11;rgb')
-    feed_data(':ffff/ffff/ffff\027\\')
-    screen:expect { any = 'did OptionSet, yay!' }
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=light' }
-
-    setup_bg_test()
-    screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|*3
-      {5:[No Name]                       0,0-1          All}|
-                                                        |
-      {3:-- TERMINAL --}                                    |
-    ]])
-    -- Send a background response with the Pt portion split.
-    feed_data('\027]11;rgba:ffff/fff')
-    feed_data('f/ffff/8000\027\\')
-    screen:expect { any = 'did OptionSet, yay!' }
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=light' }
-  end)
-
-  it('not triggers OptionSet event with invalid terminal-response', function()
-    screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|*3
-      {5:[No Name]                       0,0-1          All}|
-                                                        |
-      {3:-- TERMINAL --}                                    |
-    ]])
-    feed_data('\027]11;rgb:ffff/ffff/ffff/8000\027\\')
-    screen:expect_unchanged()
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=dark' }
-
-    setup_bg_test()
-    screen:expect([[
-      {1: }                                                 |
-      {4:~                                                 }|*3
-      {5:[No Name]                       0,0-1          All}|
-                                                        |
-      {3:-- TERMINAL --}                                    |
-    ]])
-    feed_data('\027]11;rgba:ffff/foo/ffff/8000\027\\')
-    screen:expect_unchanged()
-
-    feed_data(':echo "new_bg=".&background\n')
-    screen:expect { any = 'new_bg=dark' }
+      ]])
+    end)
   end)
 end)
 
@@ -2989,7 +2981,7 @@ describe('TUI as a client', function()
     local client_super = spawn_argv(true)
 
     set_session(server)
-    local server_pipe = meths.get_vvar('servername')
+    local server_pipe = api.nvim_get_vvar('servername')
     server:request('nvim_input', 'iHalloj!<Esc>')
     server:request('nvim_command', 'set notermguicolors')
 
@@ -3022,10 +3014,10 @@ describe('TUI as a client', function()
     ]],
     }
 
-    eq(0, meths.get_vvar('shell_error'))
+    eq(0, api.nvim_get_vvar('shell_error'))
     -- exits on input eof #22244
-    funcs.system({ nvim_prog, '--server', server_pipe, '--remote-ui' })
-    eq(1, meths.get_vvar('shell_error'))
+    fn.system({ nvim_prog, '--server', server_pipe, '--remote-ui' })
+    eq(1, api.nvim_get_vvar('shell_error'))
 
     client_super:close()
     server:close()

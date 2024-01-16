@@ -11,6 +11,7 @@
 
 #include "nvim/ascii_defs.h"
 #include "nvim/buffer.h"
+#include "nvim/buffer_defs.h"
 #include "nvim/charset.h"
 #include "nvim/cursor.h"
 #include "nvim/cursor_shape.h"
@@ -25,10 +26,12 @@
 #include "nvim/fold_defs.h"
 #include "nvim/globals.h"
 #include "nvim/grid.h"
+#include "nvim/grid_defs.h"
 #include "nvim/highlight.h"
+#include "nvim/highlight_defs.h"
 #include "nvim/highlight_group.h"
 #include "nvim/indent.h"
-#include "nvim/mark.h"
+#include "nvim/mark_defs.h"
 #include "nvim/match.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
@@ -40,15 +43,18 @@
 #include "nvim/plines.h"
 #include "nvim/pos_defs.h"
 #include "nvim/quickfix.h"
-#include "nvim/sign.h"
+#include "nvim/sign_defs.h"
 #include "nvim/spell.h"
 #include "nvim/state.h"
+#include "nvim/state_defs.h"
 #include "nvim/statusline.h"
+#include "nvim/statusline_defs.h"
 #include "nvim/strings.h"
 #include "nvim/syntax.h"
 #include "nvim/terminal.h"
 #include "nvim/types_defs.h"
 #include "nvim/ui.h"
+#include "nvim/ui_defs.h"
 #include "nvim/vim_defs.h"
 
 #define MB_FILLER_CHAR '<'  // character used when a double-width character doesn't fit.
@@ -901,7 +907,7 @@ static void fix_for_boguscols(winlinevars_T *wlv)
 /// @param lnum         line to display
 /// @param startrow     first row relative to window grid
 /// @param endrow       last grid row to be redrawn
-/// @param number_only  only update the number column
+/// @param col_rows     only update the columns for this amount of rows
 /// @param spv          'spell' related variables kept between calls for "wp"
 /// @param foldinfo     fold info for this line
 /// @param[in, out] providers  decoration providers active this line
@@ -909,7 +915,7 @@ static void fix_for_boguscols(winlinevars_T *wlv)
 ///                            or explicitly return `false`.
 ///
 /// @return             the number of last row the line occupies.
-int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_only, spellvars_T *spv,
+int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, int col_rows, spellvars_T *spv,
              foldinfo_T foldinfo)
 {
   winlinevars_T wlv;                  // variables passed between functions
@@ -1013,7 +1019,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
   buf_T *buf = wp->w_buffer;
   const bool end_fill = (lnum == buf->b_ml.ml_line_count + 1);
 
-  if (!number_only) {
+  if (col_rows == 0) {
     // To speed up the loop below, set extra_check when there is linebreak,
     // trailing white space and/or syntax processing to be done.
     extra_check = wp->w_p_lbr;
@@ -1223,7 +1229,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
     line_attr_lowprio_save = wlv.line_attr_lowprio;
   }
 
-  if (spv->spv_has_spell && !number_only) {
+  if (spv->spv_has_spell && col_rows == 0) {
     // Prepare for spell checking.
     extra_check = true;
 
@@ -1315,7 +1321,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
   } else {
     v = wp->w_leftcol;
   }
-  if (v > 0 && !number_only) {
+  if (v > 0 && col_rows == 0) {
     char *prev_ptr = ptr;
     chartabsize_T cts;
     int charsize = 0;
@@ -1448,7 +1454,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
     }
   }
 
-  if (!number_only && !has_fold && !end_fill) {
+  if (col_rows == 0 && !has_fold && !end_fill) {
     v = ptr - line;
     area_highlighting |= prepare_search_hl_line(wp, lnum, (colnr_T)v,
                                                 &line, &screen_search_hl, &search_attr,
@@ -1560,13 +1566,19 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
           && wp == curwin
           && lnum == wp->w_cursor.lnum
           && wlv.vcol >= wp->w_virtcol)
-         || number_only)
+         || col_rows > 0)
         && wlv.filler_todo <= 0) {
-      if (!number_only) {
+      if (col_rows == 0) {
         draw_virt_text(wp, buf, win_col_offset, &wlv.col, wlv.row);
       }
       // don't clear anything after wlv.col
       win_put_linebuf(wp, wlv.row, 0, wlv.col, wlv.col, bg_attr, false);
+      // update the 'statuscolumn' for the entire line size
+      if (col_rows > 0 && statuscol.draw && ++wlv.row - wlv.startrow < col_rows) {
+        draw_cols = true;
+        wlv.off = 0;
+        continue;
+      }
       // Pretend we have finished updating the window.  Except when
       // 'cursorcolumn' is set.
       if (wp->w_p_cuc) {
@@ -2611,8 +2623,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
 
       // When the window is too narrow draw all "@" lines.
       if (leftcols_width >= wp->w_grid.cols && wp->w_p_wrap) {
-        win_draw_end(wp, schar_from_ascii('@'), schar_from_ascii(' '), true, wlv.row,
-                     wp->w_grid.rows, HLF_AT);
+        win_draw_end(wp, schar_from_ascii('@'), true, wlv.row, wp->w_grid.rows, HLF_AT);
         set_empty_rows(wp, wlv.row);
         wlv.row = endrow;
       }
@@ -2836,8 +2847,7 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool number_onl
 
       // When the window is too narrow draw all "@" lines.
       if (wlv.col <= leftcols_width) {
-        win_draw_end(wp, schar_from_ascii('@'), schar_from_ascii(' '), true, wlv.row,
-                     wp->w_grid.rows, HLF_AT);
+        win_draw_end(wp, schar_from_ascii('@'), true, wlv.row, wp->w_grid.rows, HLF_AT);
         set_empty_rows(wp, wlv.row);
         wlv.row = endrow;
       }
@@ -2883,8 +2893,7 @@ static void win_put_linebuf(win_T *wp, int row, int coloff, int endcol, int clea
   int start_col = 0;
 
   if (wp->w_p_rl) {
-    linebuf_mirror(&start_col, &clear_width, grid->cols);
-    endcol = grid->cols - 1 - endcol;
+    linebuf_mirror(&start_col, &endcol, &clear_width, grid->cols);
   }
 
   // Take care of putting "<<<" on the first line for 'smoothscroll'.

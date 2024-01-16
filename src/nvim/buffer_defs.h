@@ -4,27 +4,14 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "klib/kvec.h"
-#include "nvim/api/private/defs.h"
 #include "nvim/arglist_defs.h"
-#include "nvim/eval/typval_defs.h"
-#include "nvim/extmark_defs.h"
-#include "nvim/garray_defs.h"
 #include "nvim/grid_defs.h"
-#include "nvim/hashtab_defs.h"
-#include "nvim/highlight_defs.h"
-#include "nvim/map_defs.h"
 #include "nvim/mapping_defs.h"
-#include "nvim/mark_defs.h"
 #include "nvim/marktree_defs.h"
 #include "nvim/memline_defs.h"
 #include "nvim/option_defs.h"
 #include "nvim/os/fs_defs.h"
-#include "nvim/pos_defs.h"
-#include "nvim/regexp_defs.h"
-#include "nvim/sign_defs.h"
 #include "nvim/statusline_defs.h"
-#include "nvim/types_defs.h"
 #include "nvim/undo_defs.h"
 
 /// Reference to a buffer that stores the value of buf_free_count.
@@ -698,10 +685,12 @@ struct file_buffer {
                                 // may use a different synblock_T.
 
   struct {
-    int max;                         // maximum number of signs on a single line
-    int max_count;                   // number of lines with max number of signs
-    bool resized;                    // whether max changed at start of redraw
-    Map(int, SignRange) invalid[1];  // map of invalid ranges to be checked
+    int max;                    // maximum number of signs on a single line
+    int count[SIGN_SHOW_MAX];   // number of lines with number of signs
+    bool resized;               // whether max changed at start of redraw
+    bool autom;                 // whether 'signcolumn' is displayed in "auto:n>1"
+                                // configured window. "b_signcols" calculation
+                                // is skipped if false.
   } b_signcols;
 
   Terminal *terminal;           // Terminal instance associated with the buffer
