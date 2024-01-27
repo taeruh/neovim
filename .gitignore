@@ -1,3 +1,5 @@
+arch_build/*.zst
+
 # Tools
 /.direnv/
 /venv/
