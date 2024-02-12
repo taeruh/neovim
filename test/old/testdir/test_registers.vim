@@ -175,7 +175,7 @@ func Test_recording_status_in_ex_line()
   call assert_equal('recording @x', Screenline(&lines))
   set shortmess=q
   redraw!
-  call assert_equal('recording', Screenline(&lines))
+  call assert_equal('', Screenline(&lines)) " Nvim: shm+=q fully hides message
   set shortmess&
   norm q
   redraw!
@@ -829,6 +829,8 @@ func Test_replay_charsearch_omap()
   call timer_start(10, {-> feedkeys(",bar\<Esc>q", 't')})
   call feedkeys('qrct[', 'xt!')
   call assert_equal(',bar[blah]', getline(1))
+  call assert_equal("ct[\<Ignore>,bar\<Esc>", @r)
+  call assert_equal('ct[<Ignore>,bar<Esc>', keytrans(@r))
   undo
   call assert_equal('foo[blah]', getline(1))
   call feedkeys('@r', 'xt!')

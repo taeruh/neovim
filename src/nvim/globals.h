@@ -752,6 +752,8 @@ EXTERN bool km_startsel INIT( = false);
 EXTERN int cmdwin_type INIT( = 0);    ///< type of cmdline window or 0
 EXTERN int cmdwin_result INIT( = 0);  ///< result of cmdline window or 0
 EXTERN int cmdwin_level INIT( = 0);   ///< cmdline recursion level
+EXTERN buf_T *cmdwin_buf INIT( = NULL);  ///< buffer of cmdline window or NULL
+EXTERN win_T *cmdwin_win INIT( = NULL);  ///< window of cmdline window or NULL
 EXTERN win_T *cmdwin_old_curwin INIT( = NULL);  ///< curwin before opening cmdline window or NULL
 
 EXTERN char no_lines_msg[] INIT( = N_("--No lines in buffer--"));
@@ -976,7 +978,7 @@ EXTERN const char bot_top_msg[] INIT(= N_("search hit BOTTOM, continuing at TOP"
 
 EXTERN const char line_msg[] INIT(= N_(" line "));
 
-EXTERN FILE *time_fd INIT(= NULL);  // where to write startup timing
+EXTERN FILE *time_fd INIT(= NULL);  // Where to write --startuptime report.
 
 // Some compilers warn for not using a return value, but in some situations we
 // can't do anything useful with the value.  Assign to this variable to avoid

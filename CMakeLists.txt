@@ -39,6 +39,8 @@ include(Util)
 set(FUNCS_DATA ${PROJECT_BINARY_DIR}/funcs_data.mpack)
 set(TOUCHES_DIR ${PROJECT_BINARY_DIR}/touches)
 
+file(GLOB DOCFILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/runtime/doc/*.txt)
+
 set_directory_properties(PROPERTIES
   EP_PREFIX "${DEPS_BUILD_DIR}")
 
@@ -263,7 +265,7 @@ add_custom_target(lintcommit
 add_dependencies(lintcommit nvim_bin)
 
 add_custom_target(lint)
-add_dependencies(lint lintc lintlua lintsh lintcommit)
+add_dependencies(lint lintc lintlua lintsh lintcommit lintdoc)
 
 # Format
 add_glob_target(

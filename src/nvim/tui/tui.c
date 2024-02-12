@@ -137,6 +137,7 @@ struct TUIData {
     int sync;
   } unibi_ext;
   char *space_buf;
+  size_t space_buf_len;
   bool stopped;
   int seen_error_exit;
   int width;
@@ -269,6 +270,10 @@ static void tui_query_kitty_keyboard(TUIData *tui)
   out(tui, S_LEN("\x1b[?u\x1b[c"));
 }
 
+/// Enable the alternate screen and emit other control sequences to start the TUI.
+///
+/// This is also called when the TUI is resumed after being suspended. We reinitialize all state
+/// from terminfo just in case the controlling terminal has changed (#27177).
 static void terminfo_start(TUIData *tui)
 {
   tui->scroll_region_is_full_screen = true;
@@ -418,6 +423,7 @@ static void terminfo_start(TUIData *tui)
   flush_buf(tui);
 }
 
+/// Disable the alternate screen and prepare for the TUI to close.
 static void terminfo_stop(TUIData *tui)
 {
   // Destroy output stuff
@@ -489,7 +495,7 @@ static void tui_terminal_after_startup(TUIData *tui)
   flush_buf(tui);
 }
 
-/// stop the terminal but allow it to restart later (like after suspend)
+/// Stop the terminal but allow it to restart later (like after suspend)
 static void tui_terminal_stop(TUIData *tui)
 {
   if (uv_is_closing((uv_handle_t *)&tui->output_handle)) {
@@ -1050,10 +1056,7 @@ void tui_grid_resize(TUIData *tui, Integer g, Integer width, Integer height)
 {
   UGrid *grid = &tui->grid;
   ugrid_resize(grid, (int)width, (int)height);
-
-  xfree(tui->space_buf);
-  tui->space_buf = xmalloc((size_t)width * sizeof(*tui->space_buf));
-  memset(tui->space_buf, ' ', (size_t)width);
+  ensure_space_buf_size(tui, (size_t)width);
 
   // resize might not always be followed by a clear before flush
   // so clip the invalid region
@@ -1637,6 +1640,15 @@ static void invalidate(TUIData *tui, int top, int bot, int left, int right)
   }
 }
 
+static void ensure_space_buf_size(TUIData *tui, size_t len)
+{
+  if (len > tui->space_buf_len) {
+    tui->space_buf = xrealloc(tui->space_buf, len * sizeof *tui->space_buf);
+    memset(tui->space_buf + tui->space_buf_len, ' ', len - tui->space_buf_len);
+    tui->space_buf_len = len;
+  }
+}
+
 /// Tries to get the user's wanted dimensions (columns and rows) for the entire
 /// application (i.e., the host terminal).
 void tui_guess_size(TUIData *tui)
@@ -1673,6 +1685,7 @@ void tui_guess_size(TUIData *tui)
 
   tui->width = width;
   tui->height = height;
+  ensure_space_buf_size(tui, (size_t)tui->width);
 
   // Redraw on SIGWINCH event if size didn't change. #23411
   ui_client_set_size(width, height);

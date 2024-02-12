@@ -895,6 +895,7 @@ do
   ---@field private _idx_read integer
   ---@field private _idx_write integer
   ---@field private _size integer
+  ---@overload fun(self): table?
   local Ringbuf = {}
 
   --- Clear all items
@@ -981,6 +982,26 @@ do
       end,
     })
   end
+end
+
+--- @private
+--- @generic T
+--- @param root string
+--- @param mod T
+--- @return T
+function vim._defer_require(root, mod)
+  return setmetatable({}, {
+    ---@param t table<string, any>
+    ---@param k string
+    __index = function(t, k)
+      if not mod[k] then
+        return
+      end
+      local name = string.format('%s.%s', root, k)
+      t[k] = require(name)
+      return t[k]
+    end,
+  })
 end
 
 return vim

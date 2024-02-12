@@ -55,6 +55,8 @@ typedef struct {
   Boolean ui_watched;
   Boolean undo_restore;
   String url;
+
+  Integer _subpriority;
 } Dict(set_extmark);
 
 typedef struct {
@@ -106,17 +108,19 @@ typedef struct {
 } Dict(user_command);
 
 typedef struct {
-  OptionalKeys is_set__float_config_;
+  OptionalKeys is_set__win_config_;
   Float row;
   Float col;
   Integer width;
   Integer height;
   String anchor;
   String relative;
+  String split;
   Window win;
   Array bufpos;
   Boolean external;
   Boolean focusable;
+  Boolean vertical;
   Integer zindex;
   Object border;
   Object title;
@@ -127,7 +131,7 @@ typedef struct {
   Boolean noautocmd;
   Boolean fixed;
   Boolean hide;
-} Dict(float_config);
+} Dict(win_config);
 
 typedef struct {
   Boolean is_lua;

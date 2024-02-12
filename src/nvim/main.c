@@ -399,6 +399,7 @@ int main(int argc, char **argv)
   }
 
   if (ui_client_channel_id) {
+    time_finish();
     ui_client_run(remote_ui);  // NORETURN
   }
   assert(!ui_client_channel_id && !use_builtin_ui);
@@ -694,6 +695,9 @@ void getout(int exitval)
 {
   assert(!ui_client_channel_id);
   exiting = true;
+
+  // make sure startuptimes have been flushed
+  time_finish();
 
   // On error during Ex mode, exit with a non-zero code.
   // POSIX requires this, although it's not 100% clear from the standard.
@@ -1016,6 +1020,7 @@ static bool edit_stdin(mparm_T *parmp)
                   && !(embedded_mode && stdin_fd <= 0)
                   && (!exmode_active || parmp->input_istext)
                   && !stdin_isatty
+                  && parmp->edit_type <= EDIT_STDIN
                   && parmp->scriptin == NULL;  // `-s -` was not given.
   return parmp->had_stdin_file || implicit;
 }
@@ -1494,9 +1499,16 @@ static void init_params(mparm_T *paramp, int argc, char **argv)
 /// Initialize global startuptime file if "--startuptime" passed as an argument.
 static void init_startuptime(mparm_T *paramp)
 {
+  bool is_embed = false;
+  for (int i = 1; i < paramp->argc - 1; i++) {
+    if (STRICMP(paramp->argv[i], "--embed") == 0) {
+      is_embed = true;
+      break;
+    }
+  }
   for (int i = 1; i < paramp->argc - 1; i++) {
     if (STRICMP(paramp->argv[i], "--startuptime") == 0) {
-      time_fd = fopen(paramp->argv[i + 1], "a");
+      time_init(paramp->argv[i + 1], is_embed ? "Embedded" : "Primary/TUI");
       time_start("--- NVIM STARTING ---");
       break;
     }

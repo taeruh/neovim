@@ -1,18 +1,20 @@
 local helpers = require('test.functional.helpers')(after_each)
 local Screen = require('test.functional.ui.screen')
-local clear, curbuf, curbuf_contents, curwin, eq, neq, ok, feed, insert, eval =
+local clear, curbuf, curbuf_contents, curwin, eq, neq, matches, ok, feed, insert, eval =
   helpers.clear,
   helpers.api.nvim_get_current_buf,
   helpers.curbuf_contents,
   helpers.api.nvim_get_current_win,
   helpers.eq,
   helpers.neq,
+  helpers.matches,
   helpers.ok,
   helpers.feed,
   helpers.insert,
   helpers.eval
 local poke_eventloop = helpers.poke_eventloop
 local exec = helpers.exec
+local exec_lua = helpers.exec_lua
 local fn = helpers.fn
 local request = helpers.request
 local NIL = vim.NIL
@@ -51,7 +53,7 @@ describe('API/win', function()
       eq('Invalid window id: 23', pcall_err(api.nvim_win_set_buf, 23, api.nvim_get_current_buf()))
     end)
 
-    it('disallowed in cmdwin if win={old_}curwin or buf=curbuf', function()
+    it('disallowed in cmdwin if win=cmdwin_{old_cur}win or buf=cmdwin_buf', function()
       local new_buf = api.nvim_create_buf(true, true)
       local old_win = api.nvim_get_current_win()
       local new_win = api.nvim_open_win(new_buf, false, {
@@ -73,6 +75,36 @@ describe('API/win', function()
       eq(
         'E11: Invalid in command-line window; <CR> executes, CTRL-C quits',
         pcall_err(api.nvim_win_set_buf, new_win, 0)
+      )
+      matches(
+        'E11: Invalid in command%-line window; <CR> executes, CTRL%-C quits$',
+        pcall_err(
+          exec_lua,
+          [[
+           local cmdwin_buf = vim.api.nvim_get_current_buf()
+           local new_win, new_buf = ...
+           vim.api.nvim_buf_call(new_buf, function()
+             vim.api.nvim_win_set_buf(new_win, cmdwin_buf)
+           end)
+         ]],
+          new_win,
+          new_buf
+        )
+      )
+      matches(
+        'E11: Invalid in command%-line window; <CR> executes, CTRL%-C quits$',
+        pcall_err(
+          exec_lua,
+          [[
+           local cmdwin_win = vim.api.nvim_get_current_win()
+           local new_win, new_buf = ...
+           vim.api.nvim_win_call(new_win, function()
+             vim.api.nvim_win_set_buf(cmdwin_win, new_buf)
+           end)
+         ]],
+          new_win,
+          new_buf
+        )
       )
 
       local next_buf = api.nvim_create_buf(true, true)
@@ -546,6 +578,7 @@ describe('API/win', function()
     it('in cmdline-window #9767', function()
       command('split')
       eq(2, #api.nvim_list_wins())
+      local oldbuf = api.nvim_get_current_buf()
       local oldwin = api.nvim_get_current_win()
       local otherwin = api.nvim_open_win(0, false, {
         relative = 'editor',
@@ -570,6 +603,46 @@ describe('API/win', function()
       api.nvim_win_close(0, true)
       eq(2, #api.nvim_list_wins())
       eq('', fn.getcmdwintype())
+
+      -- Closing curwin in context of a different window shouldn't close cmdwin.
+      otherwin = api.nvim_open_win(0, false, {
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        width = 10,
+        height = 10,
+      })
+      feed('q:')
+      exec_lua(
+        [[
+        vim.api.nvim_win_call(..., function()
+          vim.api.nvim_win_close(0, true)
+        end)
+      ]],
+        otherwin
+      )
+      eq(false, api.nvim_win_is_valid(otherwin))
+      eq(':', fn.getcmdwintype())
+      -- Closing cmdwin in context of a non-previous window is still OK.
+      otherwin = api.nvim_open_win(oldbuf, false, {
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        width = 10,
+        height = 10,
+      })
+      exec_lua(
+        [[
+        local otherwin, cmdwin = ...
+        vim.api.nvim_win_call(otherwin, function()
+          vim.api.nvim_win_close(cmdwin, true)
+        end)
+      ]],
+        otherwin,
+        api.nvim_get_current_win()
+      )
+      eq('', fn.getcmdwintype())
+      eq(true, api.nvim_win_is_valid(otherwin))
     end)
 
     it('closing current (float) window of another tabpage #15313', function()
@@ -646,6 +719,7 @@ describe('API/win', function()
       api.nvim_win_hide(0)
       eq('', fn.getcmdwintype())
 
+      local old_buf = api.nvim_get_current_buf()
       local old_win = api.nvim_get_current_win()
       local other_win = api.nvim_open_win(0, false, {
         relative = 'win',
@@ -663,6 +737,45 @@ describe('API/win', function()
       -- Can close other windows.
       api.nvim_win_hide(other_win)
       eq(false, api.nvim_win_is_valid(other_win))
+
+      -- Closing curwin in context of a different window shouldn't close cmdwin.
+      other_win = api.nvim_open_win(old_buf, false, {
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        width = 10,
+        height = 10,
+      })
+      exec_lua(
+        [[
+        vim.api.nvim_win_call(..., function()
+          vim.api.nvim_win_hide(0)
+        end)
+      ]],
+        other_win
+      )
+      eq(false, api.nvim_win_is_valid(other_win))
+      eq(':', fn.getcmdwintype())
+      -- Closing cmdwin in context of a non-previous window is still OK.
+      other_win = api.nvim_open_win(old_buf, false, {
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        width = 10,
+        height = 10,
+      })
+      exec_lua(
+        [[
+        local otherwin, cmdwin = ...
+        vim.api.nvim_win_call(otherwin, function()
+          vim.api.nvim_win_hide(cmdwin)
+        end)
+      ]],
+        other_win,
+        api.nvim_get_current_win()
+      )
+      eq('', fn.getcmdwintype())
+      eq(true, api.nvim_win_is_valid(other_win))
     end)
   end)
 
@@ -1055,7 +1168,7 @@ describe('API/win', function()
       eq(1, fn.exists('g:fired'))
     end)
 
-    it('disallowed in cmdwin if enter=true or buf=curbuf', function()
+    it('disallowed in cmdwin if enter=true or buf=cmdwin_buf', function()
       local new_buf = api.nvim_create_buf(true, true)
       feed('q:')
       eq(
@@ -1077,6 +1190,20 @@ describe('API/win', function()
           width = 5,
           height = 5,
         })
+      )
+      matches(
+        'E11: Invalid in command%-line window; <CR> executes, CTRL%-C quits$',
+        pcall_err(
+          exec_lua,
+          [[
+           local cmdwin_buf = vim.api.nvim_get_current_buf()
+           vim.api.nvim_buf_call(vim.api.nvim_create_buf(false, true), function()
+             vim.api.nvim_open_win(cmdwin_buf, false, {
+               relative='editor', row=5, col=5, width=5, height=5,
+             })
+           end)
+         ]]
+        )
       )
 
       eq(
@@ -1104,6 +1231,437 @@ describe('API/win', function()
         })
       )
       eq(wins_before, api.nvim_list_wins())
+    end)
+
+    it('creates a split window', function()
+      local win = api.nvim_open_win(0, true, {
+        vertical = false,
+      })
+      eq('', api.nvim_win_get_config(win).relative)
+    end)
+
+    it('creates split windows in the correct direction', function()
+      local initial_win = api.nvim_get_current_win()
+      local win = api.nvim_open_win(0, true, {
+        vertical = true,
+      })
+      eq('', api.nvim_win_get_config(win).relative)
+
+      local layout = fn.winlayout()
+
+      eq({
+        'row',
+        {
+          { 'leaf', win },
+          { 'leaf', initial_win },
+        },
+      }, layout)
+    end)
+
+    it("respects the 'split' option", function()
+      local initial_win = api.nvim_get_current_win()
+      local win = api.nvim_open_win(0, true, {
+        split = 'below',
+      })
+      eq('', api.nvim_win_get_config(win).relative)
+
+      local layout = fn.winlayout()
+
+      eq({
+        'col',
+        {
+          { 'leaf', initial_win },
+          { 'leaf', win },
+        },
+      }, layout)
+    end)
+
+    it(
+      "doesn't change tp_curwin when splitting window in non-current tab with enter=false",
+      function()
+        local tab1 = api.nvim_get_current_tabpage()
+        local tab1_win = api.nvim_get_current_win()
+
+        helpers.command('tabnew')
+        local tab2 = api.nvim_get_current_tabpage()
+        local tab2_win = api.nvim_get_current_win()
+
+        eq({ tab1_win, tab2_win }, api.nvim_list_wins())
+        eq({ tab1, tab2 }, api.nvim_list_tabpages())
+
+        api.nvim_set_current_tabpage(tab1)
+        eq(tab1_win, api.nvim_get_current_win())
+
+        local tab2_prevwin = fn.tabpagewinnr(tab2, '#')
+
+        -- split in tab2 whine in tab2, with enter = false
+        local tab2_win2 = api.nvim_open_win(api.nvim_create_buf(false, true), false, {
+          win = tab2_win,
+          split = 'right',
+        })
+        eq(tab1_win, api.nvim_get_current_win()) -- we should still be in the first tp
+        eq(tab1_win, api.nvim_tabpage_get_win(tab1))
+
+        eq(tab2_win, api.nvim_tabpage_get_win(tab2)) -- tab2's tp_curwin should not have changed
+        eq(tab2_prevwin, fn.tabpagewinnr(tab2, '#')) -- tab2's tp_prevwin should not have changed
+        eq({ tab1_win, tab2_win, tab2_win2 }, api.nvim_list_wins())
+        eq({ tab2_win, tab2_win2 }, api.nvim_tabpage_list_wins(tab2))
+      end
+    )
+
+    it('creates splits in the correct location', function()
+      local first_win = api.nvim_get_current_win()
+      -- specifying window 0 should create a split next to the current window
+      local win = api.nvim_open_win(0, true, {
+        vertical = false,
+      })
+      local layout = fn.winlayout()
+      eq({
+        'col',
+        {
+          { 'leaf', win },
+          { 'leaf', first_win },
+        },
+      }, layout)
+      -- not specifying a window should create a top-level split
+      local win2 = api.nvim_open_win(0, true, {
+        split = 'left',
+        win = -1,
+      })
+      layout = fn.winlayout()
+      eq({
+        'row',
+        {
+          { 'leaf', win2 },
+          {
+            'col',
+            {
+              { 'leaf', win },
+              { 'leaf', first_win },
+            },
+          },
+        },
+      }, layout)
+
+      -- specifying a window should create a split next to that window
+      local win3 = api.nvim_open_win(0, true, {
+        win = win,
+        vertical = false,
+      })
+      layout = fn.winlayout()
+      eq({
+        'row',
+        {
+          { 'leaf', win2 },
+          {
+            'col',
+            {
+              { 'leaf', win3 },
+              { 'leaf', win },
+              { 'leaf', first_win },
+            },
+          },
+        },
+      }, layout)
+    end)
+  end)
+
+  describe('set_config', function()
+    it('moves a split into a float', function()
+      local win = api.nvim_open_win(0, true, {
+        vertical = false,
+      })
+      eq('', api.nvim_win_get_config(win).relative)
+      api.nvim_win_set_config(win, {
+        relative = 'editor',
+        row = 5,
+        col = 5,
+        width = 5,
+        height = 5,
+      })
+      eq('editor', api.nvim_win_get_config(win).relative)
+    end)
+
+    it('throws error when attempting to move the last window', function()
+      local err = pcall_err(api.nvim_win_set_config, 0, {
+        vertical = false,
+      })
+      eq('Cannot move last window', err)
+    end)
+
+    it('passing retval of get_config results in no-op', function()
+      -- simple split layout
+      local win = api.nvim_open_win(0, true, {
+        split = 'left',
+      })
+      local layout = fn.winlayout()
+      local config = api.nvim_win_get_config(win)
+      api.nvim_win_set_config(win, config)
+      eq(layout, fn.winlayout())
+
+      -- nested split layout
+      local win2 = api.nvim_open_win(0, true, {
+        vertical = true,
+      })
+      local win3 = api.nvim_open_win(0, true, {
+        win = win2,
+        vertical = false,
+      })
+      layout = fn.winlayout()
+      config = api.nvim_win_get_config(win2)
+      api.nvim_win_set_config(win2, config)
+      eq(layout, fn.winlayout())
+
+      config = api.nvim_win_get_config(win3)
+      api.nvim_win_set_config(win3, config)
+      eq(layout, fn.winlayout())
+    end)
+
+    it('moves a float into a split', function()
+      local layout = fn.winlayout()
+      eq('leaf', layout[1])
+      local win = api.nvim_open_win(0, true, {
+        relative = 'editor',
+        row = 5,
+        col = 5,
+        width = 5,
+        height = 5,
+      })
+      api.nvim_win_set_config(win, {
+        split = 'below',
+        win = -1,
+      })
+      eq('', api.nvim_win_get_config(win).relative)
+      layout = fn.winlayout()
+      eq('col', layout[1])
+      eq(2, #layout[2])
+      eq(win, layout[2][2][2])
+    end)
+
+    it('respects the "split" option', function()
+      local layout = fn.winlayout()
+      eq('leaf', layout[1])
+      local first_win = layout[2]
+      local win = api.nvim_open_win(0, true, {
+        relative = 'editor',
+        row = 5,
+        col = 5,
+        width = 5,
+        height = 5,
+      })
+      api.nvim_win_set_config(win, {
+        split = 'right',
+        win = first_win,
+      })
+      layout = fn.winlayout()
+      eq('row', layout[1])
+      eq(2, #layout[2])
+      eq(win, layout[2][2][2])
+      local config = api.nvim_win_get_config(win)
+      eq('', config.relative)
+      eq('right', config.split)
+      api.nvim_win_set_config(win, {
+        split = 'below',
+        win = first_win,
+      })
+      layout = fn.winlayout()
+      eq('col', layout[1])
+      eq(2, #layout[2])
+      eq(win, layout[2][2][2])
+      config = api.nvim_win_get_config(win)
+      eq('', config.relative)
+      eq('below', config.split)
+    end)
+
+    it('creates top-level splits', function()
+      local win = api.nvim_open_win(0, true, {
+        vertical = false,
+      })
+      local win2 = api.nvim_open_win(0, true, {
+        vertical = true,
+        win = -1,
+      })
+      local layout = fn.winlayout()
+      eq('row', layout[1])
+      eq(2, #layout[2])
+      eq(win2, layout[2][1][2])
+      api.nvim_win_set_config(win, {
+        split = 'below',
+        win = -1,
+      })
+      layout = fn.winlayout()
+      eq('col', layout[1])
+      eq(2, #layout[2])
+      eq('row', layout[2][1][1])
+      eq(win, layout[2][2][2])
+    end)
+
+    it('moves splits to other tabpages', function()
+      local curtab = api.nvim_get_current_tabpage()
+      local win = api.nvim_open_win(0, false, { split = 'left' })
+      command('tabnew')
+      local tabnr = api.nvim_get_current_tabpage()
+      command('tabprev') -- return to the initial tab
+
+      api.nvim_win_set_config(win, {
+        split = 'right',
+        win = api.nvim_tabpage_get_win(tabnr),
+      })
+
+      eq(tabnr, api.nvim_win_get_tabpage(win))
+      -- we are changing the config, the current tabpage should not change
+      eq(curtab, api.nvim_get_current_tabpage())
+
+      command('tabnext') -- switch to the new tabpage so we can get the layout
+      local layout = fn.winlayout()
+
+      eq({
+        'row',
+        {
+          { 'leaf', api.nvim_tabpage_get_win(tabnr) },
+          { 'leaf', win },
+        },
+      }, layout)
+    end)
+
+    it('correctly moves curwin when moving curwin to a different tabpage', function()
+      local curtab = api.nvim_get_current_tabpage()
+      command('tabnew')
+      local tab2 = api.nvim_get_current_tabpage()
+      local tab2_win = api.nvim_get_current_win()
+
+      command('tabprev') -- return to the initial tab
+
+      local neighbor = api.nvim_get_current_win()
+
+      -- create and enter a new split
+      local win = api.nvim_open_win(0, true, {
+        vertical = false,
+      })
+
+      eq(curtab, api.nvim_win_get_tabpage(win))
+
+      eq({ win, neighbor }, api.nvim_tabpage_list_wins(curtab))
+
+      -- move the current win to a different tabpage
+      api.nvim_win_set_config(win, {
+        split = 'right',
+        win = api.nvim_tabpage_get_win(tab2),
+      })
+
+      eq(curtab, api.nvim_get_current_tabpage())
+
+      -- win should have moved to tab2
+      eq(tab2, api.nvim_win_get_tabpage(win))
+      -- tp_curwin of tab2 should not have changed
+      eq(tab2_win, api.nvim_tabpage_get_win(tab2))
+      -- win lists should be correct
+      eq({ tab2_win, win }, api.nvim_tabpage_list_wins(tab2))
+      eq({ neighbor }, api.nvim_tabpage_list_wins(curtab))
+
+      -- current win should have moved to neighboring win
+      eq(neighbor, api.nvim_tabpage_get_win(curtab))
+    end)
+
+    it('splits windows in non-current tabpage', function()
+      local curtab = api.nvim_get_current_tabpage()
+      command('tabnew')
+      local tabnr = api.nvim_get_current_tabpage()
+      command('tabprev') -- return to the initial tab
+
+      local win = api.nvim_open_win(0, false, {
+        vertical = false,
+        win = api.nvim_tabpage_get_win(tabnr),
+      })
+
+      eq(tabnr, api.nvim_win_get_tabpage(win))
+      -- since enter = false, the current tabpage should not change
+      eq(curtab, api.nvim_get_current_tabpage())
+    end)
+
+    it('moves the current split window', function()
+      local initial_win = api.nvim_get_current_win()
+      local win = api.nvim_open_win(0, true, {
+        vertical = true,
+      })
+      local win2 = api.nvim_open_win(0, true, {
+        vertical = true,
+      })
+      api.nvim_set_current_win(win)
+      eq({
+        'row',
+        {
+          { 'leaf', win2 },
+          { 'leaf', win },
+          { 'leaf', initial_win },
+        },
+      }, fn.winlayout())
+
+      api.nvim_win_set_config(0, {
+        vertical = false,
+        win = 0,
+      })
+      eq(win, api.nvim_get_current_win())
+      eq({
+        'col',
+        {
+          { 'leaf', win },
+          {
+            'row',
+            {
+              { 'leaf', win2 },
+              { 'leaf', initial_win },
+            },
+          },
+        },
+      }, fn.winlayout())
+
+      api.nvim_set_current_win(win2)
+      local win3 = api.nvim_open_win(0, true, {
+        vertical = true,
+      })
+      eq(win3, api.nvim_get_current_win())
+
+      eq({
+        'col',
+        {
+          { 'leaf', win },
+          {
+            'row',
+            {
+              { 'leaf', win3 },
+              { 'leaf', win2 },
+              { 'leaf', initial_win },
+            },
+          },
+        },
+      }, fn.winlayout())
+
+      api.nvim_win_set_config(0, {
+        vertical = false,
+        win = 0,
+      })
+
+      eq(win3, api.nvim_get_current_win())
+      eq({
+        'col',
+        {
+          { 'leaf', win },
+          {
+            'row',
+            {
+              {
+                'col',
+                {
+                  { 'leaf', win3 },
+                  { 'leaf', win2 },
+                },
+              },
+              { 'leaf', initial_win },
+            },
+          },
+        },
+      }, fn.winlayout())
     end)
   end)
 
@@ -1164,6 +1722,154 @@ describe('API/win', function()
       local cfg = api.nvim_win_get_config(win)
       eq(title, cfg.title)
       eq(footer, cfg.footer)
+    end)
+
+    it('includes split for normal windows', function()
+      local win = api.nvim_open_win(0, true, {
+        vertical = true,
+        win = -1,
+      })
+      eq('left', api.nvim_win_get_config(win).split)
+      api.nvim_win_set_config(win, {
+        vertical = false,
+        win = -1,
+      })
+      eq('above', api.nvim_win_get_config(win).split)
+      api.nvim_win_set_config(win, {
+        split = 'below',
+        win = -1,
+      })
+      eq('below', api.nvim_win_get_config(win).split)
+    end)
+
+    it('includes split when splitting with ex commands', function()
+      local win = api.nvim_get_current_win()
+      eq('left', api.nvim_win_get_config(win).split)
+
+      command('vsplit')
+      local win2 = api.nvim_get_current_win()
+
+      -- initial window now be marked as right split
+      -- since it was split with a vertical split
+      -- and 'splitright' is false by default
+      eq('right', api.nvim_win_get_config(win).split)
+      eq('left', api.nvim_win_get_config(win2).split)
+
+      api.nvim_set_option_value('splitbelow', true, {
+        scope = 'global',
+      })
+      api.nvim_win_close(win, true)
+      command('split')
+      local win3 = api.nvim_get_current_win()
+      eq('below', api.nvim_win_get_config(win3).split)
+    end)
+
+    it("includes the correct 'split' option in complex layouts", function()
+      local initial_win = api.nvim_get_current_win()
+      local win = api.nvim_open_win(0, false, {
+        split = 'right',
+        win = -1,
+      })
+
+      local win2 = api.nvim_open_win(0, false, {
+        split = 'below',
+        win = win,
+      })
+
+      api.nvim_win_set_config(win2, {
+        width = 50,
+      })
+
+      api.nvim_win_set_config(win, {
+        split = 'left',
+        win = -1,
+      })
+
+      local win3 = api.nvim_open_win(0, false, {
+        split = 'above',
+        win = -1,
+      })
+      local float = api.nvim_open_win(0, false, {
+        relative = 'editor',
+        width = 40,
+        height = 20,
+        col = 20,
+        row = 10,
+      })
+      api.nvim_win_set_config(float, {
+        split = 'right',
+        win = -1,
+      })
+
+      local layout = fn.winlayout()
+
+      eq({
+        'row',
+        {
+          {
+            'col',
+            {
+              { 'leaf', win3 },
+              {
+                'row',
+                {
+                  { 'leaf', win },
+                  { 'leaf', initial_win },
+                  { 'leaf', win2 },
+                },
+              },
+            },
+          },
+          {
+            'leaf',
+            float,
+          },
+        },
+      }, layout)
+
+      eq('above', api.nvim_win_get_config(win3).split)
+      eq('left', api.nvim_win_get_config(win).split)
+      eq('left', api.nvim_win_get_config(initial_win).split)
+      eq('right', api.nvim_win_get_config(win2).split)
+      eq('right', api.nvim_win_get_config(float).split)
+    end)
+  end)
+
+  describe('set_config', function()
+    it('no crash with invalid title', function()
+      local win = api.nvim_open_win(0, true, {
+        width = 10,
+        height = 10,
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        title = { { 'test' } },
+        border = 'single',
+      })
+      eq(
+        'title/footer cannot be an empty array',
+        pcall_err(api.nvim_win_set_config, win, { title = {} })
+      )
+      command('redraw!')
+      assert_alive()
+    end)
+
+    it('no crash with invalid footer', function()
+      local win = api.nvim_open_win(0, true, {
+        width = 10,
+        height = 10,
+        relative = 'editor',
+        row = 10,
+        col = 10,
+        footer = { { 'test' } },
+        border = 'single',
+      })
+      eq(
+        'title/footer cannot be an empty array',
+        pcall_err(api.nvim_win_set_config, win, { footer = {} })
+      )
+      command('redraw!')
+      assert_alive()
     end)
   end)
 

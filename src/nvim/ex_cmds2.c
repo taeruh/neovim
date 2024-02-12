@@ -405,7 +405,7 @@ buf_found:
 
   // Open the changed buffer in the current window.
   if (buf != curbuf) {
-    set_curbuf(buf, unload ? DOBUF_UNLOAD : DOBUF_GOTO);
+    set_curbuf(buf, unload ? DOBUF_UNLOAD : DOBUF_GOTO, true);
   }
 
 theend:
@@ -551,7 +551,7 @@ void ex_listdo(exarg_T *eap)
           break;
         }
         assert(wp);
-        execute = !wp->w_floating || wp->w_float_config.focusable;
+        execute = !wp->w_floating || wp->w_config.focusable;
         if (execute) {
           win_goto(wp);
           if (curwin != wp) {

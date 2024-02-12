@@ -406,18 +406,16 @@ static int sort_compare(const void *s1, const void *s2)
   // number.
   if (sort_nr) {
     if (l1.st_u.num.is_number != l2.st_u.num.is_number) {
-      result = l1.st_u.num.is_number - l2.st_u.num.is_number;
+      result = l1.st_u.num.is_number > l2.st_u.num.is_number ? 1 : -1;
     } else {
       result = l1.st_u.num.value == l2.st_u.num.value
                ? 0
-               : l1.st_u.num.value > l2.st_u.num.value
-               ? 1
-               : -1;
+               : l1.st_u.num.value > l2.st_u.num.value ? 1 : -1;
     }
   } else if (sort_flt) {
     result = l1.st_u.value_flt == l2.st_u.value_flt
-             ? 0 : l1.st_u.value_flt > l2.st_u.value_flt
-             ? 1 : -1;
+             ? 0
+             : l1.st_u.value_flt > l2.st_u.value_flt ? 1 : -1;
   } else {
     // We need to copy one line into "sortbuf1", because there is no
     // guarantee that the first pointer becomes invalid when obtaining the
@@ -2305,10 +2303,19 @@ int do_ecmd(int fnum, char *ffname, char *sfname, exarg_T *eap, linenr_T newlnum
     // If the current buffer was empty and has no file name, curbuf
     // is returned by buflist_new(), nothing to do here.
     if (buf != curbuf) {
+      // Should only be possible to get here if the cmdwin is closed, or
+      // if it's opening and its buffer hasn't been set yet (the new
+      // buffer is for it).
+      assert(cmdwin_buf == NULL);
+
       const int save_cmdwin_type = cmdwin_type;
+      win_T *const save_cmdwin_win = cmdwin_win;
+      win_T *const save_cmdwin_old_curwin = cmdwin_old_curwin;
 
       // BufLeave applies to the old buffer.
       cmdwin_type = 0;
+      cmdwin_win = NULL;
+      cmdwin_old_curwin = NULL;
 
       // Be careful: The autocommands may delete any buffer and change
       // the current buffer.
@@ -2324,7 +2331,11 @@ int do_ecmd(int fnum, char *ffname, char *sfname, exarg_T *eap, linenr_T newlnum
       const bufref_T save_au_new_curbuf = au_new_curbuf;
       set_bufref(&au_new_curbuf, buf);
       apply_autocmds(EVENT_BUFLEAVE, NULL, NULL, false, curbuf);
+
       cmdwin_type = save_cmdwin_type;
+      cmdwin_win = save_cmdwin_win;
+      cmdwin_old_curwin = save_cmdwin_old_curwin;
+
       if (!bufref_valid(&au_new_curbuf)) {
         // New buffer has been deleted.
         delbuf_msg(new_name);  // Frees new_name.
@@ -4579,9 +4590,6 @@ static int show_sub(exarg_T *eap, pos_T old_cusr, PreviewLines *preview_lines, i
   // disable file info message
   set_string_option_direct(kOptShortmess, "F", 0, SID_NONE);
 
-  // Update the topline to ensure that main window is on the correct line
-  update_topline(curwin);
-
   // Place cursor on nearest matching line, to undo do_sub() cursor placement.
   for (size_t i = 0; i < lines.subresults.size; i++) {
     SubResult curres = lines.subresults.items[i];
@@ -4591,6 +4599,9 @@ static int show_sub(exarg_T *eap, pos_T old_cusr, PreviewLines *preview_lines, i
       break;
     }  // Else: All matches are above, do_sub() already placed cursor.
   }
+
+  // Update the topline to ensure that main window is on the correct line
+  update_topline(curwin);
 
   // Width of the "| lnum|..." column which displays the line numbers.
   int col_width = 0;

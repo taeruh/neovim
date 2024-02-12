@@ -39,6 +39,7 @@ describe('decorations providers', function()
       [16] = {special = Screen.colors.Red, undercurl = true},
       [17] = {foreground = Screen.colors.Red},
       [18] = {bold = true, foreground = Screen.colors.SeaGreen};
+      [19] = {bold = true};
     }
   end)
 
@@ -687,7 +688,7 @@ describe('decorations providers', function()
     ]]}
   end)
 
-   it('can add new providers during redraw #26652', function()
+  it('can add new providers during redraw #26652', function()
     setup_provider [[
     local ns = api.nvim_create_namespace('test_no_add')
     function on_do(...)
@@ -696,6 +697,66 @@ describe('decorations providers', function()
     ]]
 
     helpers.assert_alive()
+  end)
+
+  it('supports subpriorities (order of definitions in a query file #27131)', function()
+    insert(mulholland)
+    setup_provider [[
+      local test_ns = api.nvim_create_namespace('mulholland')
+      function on_do(event, ...)
+        if event == "line" then
+          local win, buf, line = ...
+          api.nvim_buf_set_extmark(buf, test_ns, line, 0, {
+            end_row = line + 1,
+            hl_eol = true,
+            hl_group = 'Comment',
+            ephemeral = true,
+            priority = 100,
+            _subpriority = 20,
+          })
+
+          -- This extmark is set last but has a lower subpriority, so the first extmark "wins"
+          api.nvim_buf_set_extmark(buf, test_ns, line, 0, {
+            end_row = line + 1,
+            hl_eol = true,
+            hl_group = 'String',
+            ephemeral = true,
+            priority = 100,
+            _subpriority = 10,
+          })
+        end
+      end
+    ]]
+
+    screen:expect{grid=[[
+      {4:// just to see if there was an accident }|
+      {4:// on Mulholland Drive                  }|
+      {4:try_start();                            }|
+      {4:bufref_T save_buf;                      }|
+      {4:switch_buffer(&save_buf, buf);          }|
+      {4:posp = getmark(mark, false);            }|
+      {4:restore_buffer(&save_buf);^              }|
+                                              |
+    ]]}
+  end)
+
+  it('is not invoked repeatedly in Visual mode with vim.schedule() #20235', function()
+    exec_lua([[_G.cnt = 0]])
+    setup_provider([[
+      function on_do(event, ...)
+        if event == 'win' then
+          vim.schedule(function() end)
+          _G.cnt = _G.cnt + 1
+        end
+      end
+    ]])
+    feed('v')
+    screen:expect([[
+      ^                                        |
+      {1:~                                       }|*6
+      {19:-- VISUAL --}                            |
+    ]])
+    eq(2, exec_lua([[return _G.cnt]]))
   end)
 end)
 
@@ -5058,6 +5119,33 @@ l5
     ]]}
   end)
 
+  it('correct width with moved marks before undo savepos', function()
+    screen:try_resize(20, 4)
+    insert(example_test3)
+    feed('gg')
+    exec_lua([[
+      local ns = vim.api.nvim_create_namespace('')
+      vim.api.nvim_buf_set_extmark(0, ns, 0, 0, { sign_text = 'S1' })
+      vim.api.nvim_buf_set_extmark(0, ns, 1, 0, { sign_text = 'S2' })
+      local s3 = vim.api.nvim_buf_set_extmark(0, ns, 2, 0, { sign_text = 'S3' })
+      local s4 = vim.api.nvim_buf_set_extmark(0, ns, 2, 0, { sign_text = 'S4' })
+      vim.schedule(function()
+        vim.cmd('silent d3')
+        vim.api.nvim_buf_set_extmark(0, ns, 2, 0, { id = s3, sign_text = 'S3' })
+        vim.api.nvim_buf_set_extmark(0, ns, 2, 0, { id = s4, sign_text = 'S4' })
+        vim.cmd('silent undo')
+        vim.api.nvim_buf_del_extmark(0, ns, s3)
+      end)
+    ]])
+
+    screen:expect{grid=[[
+      S1^l1                |
+      S2l2                |
+      S4l3                |
+                          |
+    ]]}
+  end)
+
   it('no crash with sign after many marks #27137', function()
     screen:try_resize(20, 4)
     insert('a')
@@ -5070,6 +5158,18 @@ l5
       S1{4:^a}                 |
       {2:~                   }|*2
                           |
+    ]]}
+  end)
+
+  it('correct sort order with multiple namespaces and same id', function()
+    local ns2 = api.nvim_create_namespace('')
+    api.nvim_buf_set_extmark(0, ns, 0, 0, {sign_text = 'S1', id = 1})
+    api.nvim_buf_set_extmark(0, ns2, 0, 0, {sign_text = 'S2', id = 1})
+
+    screen:expect{grid=[[
+      S1S2^                                              |
+      {2:~                                                 }|*8
+                                                        |
     ]]}
   end)
 end)

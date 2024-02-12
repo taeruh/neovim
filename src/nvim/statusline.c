@@ -151,14 +151,14 @@ void win_redr_status(win_T *wp)
     }
 
     grid_line_start(&default_grid, is_stl_global ? (Rows - (int)p_ch - 1) : W_ENDROW(wp));
-    int col = is_stl_global ? 0 : wp->w_wincol;
+    const int off = is_stl_global ? 0 : wp->w_wincol;
 
-    int width = grid_line_puts(col, p, -1, attr);
-    grid_line_fill(width + col, this_ru_col + col, fillchar, attr);
+    int width = grid_line_puts(off, p, -1, attr);
+    grid_line_fill(off + width, off + this_ru_col, fillchar, attr);
 
     if (get_keymap_str(wp, "<%s>", NameBuff, MAXPATHL)
-        && this_ru_col - len > (int)(strlen(NameBuff) + 1)) {
-      grid_line_puts((int)((size_t)this_ru_col - strlen(NameBuff) - 1), NameBuff, -1, attr);
+        && this_ru_col - len > (int)strlen(NameBuff) + 1) {
+      grid_line_puts(off + this_ru_col - (int)strlen(NameBuff) - 1, NameBuff, -1, attr);
     }
 
     win_redr_ruler(wp);
@@ -168,7 +168,7 @@ void win_redr_status(win_T *wp)
       const int sc_width = MIN(10, this_ru_col - len - 2);
 
       if (sc_width > 0) {
-        grid_line_puts(wp->w_wincol + this_ru_col - sc_width - 1, showcmd_buf, sc_width, attr);
+        grid_line_puts(off + this_ru_col - sc_width - 1, showcmd_buf, sc_width, attr);
       }
     }
 
@@ -411,7 +411,7 @@ static void win_redr_custom(win_T *wp, bool draw_winbar, bool draw_ruler)
   // might change the option value and free the memory.
   stl = xstrdup(stl);
   build_stl_str_hl(ewp, buf, sizeof(buf), stl, opt_idx, opt_scope,
-                   fillchar, maxwidth, &hltab, &tabtab, NULL);
+                   fillchar, maxwidth, &hltab, NULL, &tabtab, NULL);
 
   xfree(stl);
   ewp->w_p_crb = p_crb_save;
@@ -615,8 +615,8 @@ void win_redr_ruler(win_T *wp)
       }
     }
 
-    int w = grid_line_puts(this_ru_col + off, buffer, -1, attr);
-    grid_line_fill(this_ru_col + off + w, off + width, fillchar, attr);
+    int w = grid_line_puts(off + this_ru_col, buffer, -1, attr);
+    grid_line_fill(off + this_ru_col + w, off + width, fillchar, attr);
   }
 }
 
@@ -665,7 +665,7 @@ static void ui_ext_tabline_update(void)
 
     win_T *cwp = (tp == curtab) ? curwin : tp->tp_curwin;
     get_trans_bufname(cwp->w_buffer);
-    PUT_C(tab_info, "name", STRING_OBJ(arena_string(&arena, cstr_as_string(NameBuff))));
+    PUT_C(tab_info, "name", CSTR_TO_ARENA_OBJ(&arena, NameBuff));
 
     ADD_C(tabs, DICTIONARY_OBJ(tab_info));
   }
@@ -686,7 +686,7 @@ static void ui_ext_tabline_update(void)
     PUT_C(buffer_info, "buffer", BUFFER_OBJ(buf->handle));
 
     get_trans_bufname(buf);
-    PUT_C(buffer_info, "name", STRING_OBJ(arena_string(&arena, cstr_as_string(NameBuff))));
+    PUT_C(buffer_info, "name", CSTR_TO_ARENA_OBJ(&arena, NameBuff));
 
     ADD_C(buffers, DICTIONARY_OBJ(buffer_info));
   }
@@ -880,7 +880,7 @@ int build_statuscol_str(win_T *wp, linenr_T lnum, linenr_T relnum, char *buf, st
   StlClickRecord *clickrec;
   char *stc = xstrdup(wp->w_p_stc);
   int width = build_stl_str_hl(wp, buf, MAXPATHL, stc, kOptStatuscolumn, OPT_LOCAL, 0,
-                               stcp->width, &stcp->hlrec, fillclick ? &clickrec : NULL, stcp);
+                               stcp->width, &stcp->hlrec, NULL, fillclick ? &clickrec : NULL, stcp);
   xfree(stc);
 
   if (fillclick) {
@@ -922,7 +922,7 @@ int build_statuscol_str(win_T *wp, linenr_T lnum, linenr_T relnum, char *buf, st
 /// @return  The final width of the statusline
 int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, OptIndex opt_idx,
                      int opt_scope, schar_T fillchar, int maxwidth, stl_hlrec_t **hltab,
-                     StlClickRecord **tabtab, statuscol_T *stcp)
+                     size_t *hltab_len, StlClickRecord **tabtab, statuscol_T *stcp)
 {
   static size_t stl_items_len = 20;  // Initial value, grows as needed.
   static stl_item_t *stl_items = NULL;
@@ -2131,6 +2131,9 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, OptIndex op
     }
     sp->start = NULL;
     sp->userhl = 0;
+  }
+  if (hltab_len) {
+    *hltab_len = (size_t)itemcnt;
   }
 
   // Store the info about tab pages labels.

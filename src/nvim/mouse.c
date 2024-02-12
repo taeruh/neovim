@@ -1326,18 +1326,18 @@ retnomove:
                 && !sep_line_offset
                 && (wp->w_p_rl
                     ? col < wp->w_width_inner - fdc
-                    : col >= fdc + (cmdwin_type == 0 && wp == curwin ? 0 : 1))
+                    : col >= fdc + (wp != cmdwin_win ? 0 : 1))
                 && (flags & MOUSE_MAY_STOP_VIS)))) {
       end_visual_mode();
       redraw_curbuf_later(UPD_INVERTED);  // delete the inversion
     }
-    if (cmdwin_type != 0 && wp != curwin) {
+    if (cmdwin_type != 0 && wp != cmdwin_win) {
       // A click outside the command-line window: Use modeless
       // selection if possible.  Allow dragging the status lines.
       sep_line_offset = 0;
       row = 0;
       col += wp->w_wincol;
-      wp = curwin;
+      wp = cmdwin_win;
     }
     // Only change window focus when not clicking on or dragging the
     // status line.  Do change focus when releasing the mouse button
@@ -1571,9 +1571,6 @@ void nv_mousescroll(cmdarg_T *cap)
   // Call the common mouse scroll function shared with other modes.
   do_mousescroll(cap);
 
-  if (curwin != old_curwin && curwin->w_p_cul) {
-    redraw_for_cursorline(curwin);
-  }
   curwin->w_redr_status = true;
   curwin = old_curwin;
   curbuf = curwin->w_buffer;
@@ -1725,7 +1722,7 @@ static win_T *mouse_find_grid_win(int *gridp, int *rowp, int *colp)
   } else if (*gridp > 1) {
     win_T *wp = get_win_by_grid_handle(*gridp);
     if (wp && wp->w_grid_alloc.chars
-        && !(wp->w_floating && !wp->w_float_config.focusable)) {
+        && !(wp->w_floating && !wp->w_config.focusable)) {
       *rowp = MIN(*rowp - wp->w_grid.row_offset, wp->w_grid.rows - 1);
       *colp = MIN(*colp - wp->w_grid.col_offset, wp->w_grid.cols - 1);
       return wp;
