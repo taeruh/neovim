@@ -400,19 +400,24 @@ the pattern.
 							*tag-!*
 If the tag is in the current file this will always work.  Otherwise the
 performed actions depend on whether the current file was changed, whether a !
-is added to the command and on the 'autowrite' option:
+is added to the command and on the 'autowrite' and 'winfixbuf' options:
 
-  tag in       file	   autowrite			~
-current file  changed	!   option	  action	~
- ---------------------------------------------------------------------------
-    yes		 x	x     x	  goto tag
-    no		 no	x     x	  read other file, goto tag
-    no		yes    yes    x   abandon current file, read other file, goto
-				  tag
-    no		yes	no    on  write current file, read other file, goto
-				  tag
-    no		yes	no   off  fail
- ---------------------------------------------------------------------------
+  tag in       file	    winfixbuf	autowrite		~
+current file  changed	!   option	option	      action	~
+ -----------------------------------------------------------------------------
+    yes		x	x      off	  x	    goto tag
+    no		no	x      off	  x	    read other file, goto tag
+    no		yes	yes    off	  x	    abandon current file,
+						    read other file, goto tag
+    no		yes	no     off	  on	    write current file,
+						    read other file, goto tag
+    no		yes	no     off	  off	    fail
+    yes		x	yes    x	  x	    goto tag
+    no		no	no     on	  x	    fail
+    no		yes	no     on	  x	    fail
+    no		yes	no     on	  on	    fail
+    no		yes	no     on	  off	    fail
+ -----------------------------------------------------------------------------
 
 - If the tag is in the current file, the command will always work.
 - If the tag is in another file and the current file was not changed, the
@@ -428,6 +433,8 @@ current file  changed	!   option	  action	~
   the changes, use the ":w" command and then use ":tag" without an argument.
   This works because the tag is put on the stack anyway.  If you want to lose
   the changes you can use the ":tag!" command.
+- If the tag is in another file and the window includes 'winfixbuf', the
+  command will fail. If the tag is in the same file then it may succeed.
 
 							*tag-security*
 Note that Vim forbids some commands, for security reasons.  This works like
@@ -773,8 +780,16 @@ CTRL-W i		Open a new window, with the cursor on the first line
 			beginning of the file.  If a count is given, the
 			count'th matching line is displayed.
 
+							*[d-default*
+			Jumps to the previous diagnostic in the current buffer
+			by default. |vim.diagnostic.jump()| |default-mappings|
+
 							*]d*
 ]d			like "[d", but start at the current cursor position.
+
+							*]d-default*
+			Jumps to the next diagnostic in the current buffer by
+			default. |vim.diagnostic.jump()| |default-mappings|
 
 							*:ds* *:dsearch*
 :[range]ds[earch][!] [count] [/]string[/]
@@ -788,8 +803,16 @@ CTRL-W i		Open a new window, with the cursor on the first line
 			displayed for the found lines.  The search starts
 			from the beginning of the file.
 
+							*[D-default*
+			Jumps to the first diagnostic in the current buffer by
+			default. |vim.diagnostic.jump()| |default-mappings|
+
 							*]D*
 ]D			like "[D", but start at the current cursor position.
+
+							*]D-default*
+			Jumps to the last diagnostic in the current buffer by
+			default. |vim.diagnostic.jump()| |default-mappings|
 
 							*:dli* *:dlist*
 :[range]dli[st][!] [/]string[/]
@@ -821,6 +844,10 @@ CTRL-W d		Open a new window, with the cursor on the first
 			under the cursor.  The search starts from the
 			beginning of the file.  If a count is given, the
 			count'th matching line is jumped to.
+
+						*CTRL-W_d-default*
+			Mapped to |vim.diagnostic.open_float()| by default.
+			|default-mappings|
 
 							*:dsp* *:dsplit*
 :[range]dsp[lit][!] [count] [/]string[/]

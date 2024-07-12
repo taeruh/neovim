@@ -197,14 +197,14 @@ func Test_syntax_completion()
   " Check that clearing "Aap" avoids it showing up before Boolean.
   hi @Aap ctermfg=blue
   call feedkeys(":syn list \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn list @Aap @attribute @boolean @character ', @:)
+  call assert_match('^"syn list @Aap @attribute @attribute.builtin @boolean @character ', @:)
   hi clear @Aap
 
   call feedkeys(":syn list \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn list @attribute @boolean @character ', @:)
+  call assert_match('^"syn list @attribute @attribute.builtin @boolean @character ', @:)
 
   call feedkeys(":syn match \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn match @attribute @boolean @character ', @:)
+  call assert_match('^"syn match @attribute @attribute.builtin @boolean @character ', @:)
 
   syn cluster Aax contains=Aap
   call feedkeys(":syn list @A\<C-A>\<C-B>\"\<CR>", 'tx')
@@ -549,8 +549,7 @@ endfunc
 func Test_bg_detection()
   CheckNotGui
 
-  " auto-detection of &bg, make sure sure it isn't set anywhere before
-  " this test
+  " auto-detection of &bg, make sure it isn't set anywhere before this test
   hi Normal ctermbg=0
   call assert_equal('dark', &bg)
   hi Normal ctermbg=4

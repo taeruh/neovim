@@ -1,19 +1,20 @@
 -- Test suite for testing luaeval() function
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
 
-local pcall_err = helpers.pcall_err
-local exc_exec = helpers.exc_exec
-local remove_trace = helpers.remove_trace
-local exec_lua = helpers.exec_lua
-local command = helpers.command
-local api = helpers.api
-local fn = helpers.fn
-local clear = helpers.clear
-local eval = helpers.eval
-local feed = helpers.feed
+local pcall_err = t.pcall_err
+local exc_exec = n.exc_exec
+local remove_trace = t.remove_trace
+local exec_lua = n.exec_lua
+local command = n.command
+local api = n.api
+local fn = n.fn
+local clear = n.clear
+local eval = n.eval
+local feed = n.feed
 local NIL = vim.NIL
-local eq = helpers.eq
+local eq = t.eq
 
 before_each(clear)
 
@@ -38,8 +39,8 @@ describe('luaeval()', function()
 
   describe('second argument', function()
     it('is successfully received', function()
-      local t = {t=true, f=false, --[[n=NIL,]] d={l={'string', 42, 0.42}}}
-      eq(t, fn.luaeval("_A", t))
+      local q = {t=true, f=false, --[[n=NIL,]] d={l={'string', 42, 0.42}}}
+      eq(q, fn.luaeval("_A", q))
       -- Not tested: nil, funcrefs, returned object identity: behaviour will
       -- most likely change.
     end)
@@ -71,9 +72,9 @@ describe('luaeval()', function()
     end)
     it('are successfully converted to special dictionaries in table keys', function()
       command([[let d = luaeval('{["\0"]=1}')]])
-      eq({_TYPE={}, _VAL={{{_TYPE={}, _VAL={'\n'}}, 1}}}, api.nvim_get_var('d'))
+      eq({_TYPE={}, _VAL={{'\000', 1}}}, api.nvim_get_var('d'))
       eq(1, fn.eval('d._TYPE is v:msgpack_types.map'))
-      eq(1, fn.eval('d._VAL[0][0]._TYPE is v:msgpack_types.string'))
+      eq(eval('v:t_blob'), fn.eval('type(d._VAL[0][0])'))
     end)
     it('are successfully converted to blobs from a list', function()
       command([[let l = luaeval('{"abc", "a\0b", "c\0d", "def"}')]])
@@ -124,11 +125,11 @@ describe('luaeval()', function()
     local level = 30
     eq(nested_by_level[level].o, fn.luaeval(nested_by_level[level].s))
 
-    eq({_TYPE={}, _VAL={{{_TYPE={}, _VAL={'\n', '\n'}}, '\000\n\000\000'}}},
+    eq({_TYPE={}, _VAL={{'\000\n\000', '\000\n\000\000'}}},
        fn.luaeval([[{['\0\n\0']='\0\n\0\0'}]]))
     eq(1, eval([[luaeval('{["\0\n\0"]="\0\n\0\0"}')._TYPE is v:msgpack_types.map]]))
-    eq(1, eval([[luaeval('{["\0\n\0"]="\0\n\0\0"}')._VAL[0][0]._TYPE is v:msgpack_types.string]]))
-    eq({nested={{_TYPE={}, _VAL={{{_TYPE={}, _VAL={'\n', '\n'}}, '\000\n\000\000'}}}}},
+    eq(eval("v:t_blob"), eval([[type(luaeval('{["\0\n\0"]="\0\n\0\0"}')._VAL[0][0])]]))
+    eq({nested={{_TYPE={}, _VAL={{'\000\n\000', '\000\n\000\000'}}}}},
        fn.luaeval([[{nested={{['\0\n\0']='\0\n\0\0'}}}]]))
   end)
 
@@ -176,12 +177,10 @@ describe('luaeval()', function()
   end
 
   it('correctly passes special dictionaries', function()
-    eq({0, '\000\n\000'}, luaevalarg(sp('binary', '["\\n", "\\n"]')))
     eq({0, '\000\n\000'}, luaevalarg(sp('string', '["\\n", "\\n"]')))
     eq({0, true}, luaevalarg(sp('boolean', 1)))
     eq({0, false}, luaevalarg(sp('boolean', 0)))
     eq({0, NIL}, luaevalarg(sp('nil', 0)))
-    eq({0, {[""]=""}}, luaevalarg(mapsp(sp('binary', '[""]'), '""')))
     eq({0, {[""]=""}}, luaevalarg(mapsp(sp('string', '[""]'), '""')))
   end)
 

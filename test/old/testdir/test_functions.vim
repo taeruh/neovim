@@ -98,6 +98,11 @@ func Test_err_teapot()
   call assert_fails('call err_teapot(expr)', "E503: Coffee is currently not available")
 endfunc
 
+func Test_islocked()
+  call assert_fails('call islocked(99)', 'E475:')
+  call assert_fails('call islocked("s: x")', 'E488:')
+endfunc
+
 func Test_len()
   call assert_equal(1, len(0))
   call assert_equal(2, len(12))
@@ -2138,54 +2143,6 @@ func Test_balloon_show()
   endif
 endfunc
 
-func Test_shellescape()
-  let save_shell = &shell
-  set shell=bash
-  call assert_equal("'text'", shellescape('text'))
-  call assert_equal("'te\"xt'", 'te"xt'->shellescape())
-  call assert_equal("'te'\\''xt'", shellescape("te'xt"))
-
-  call assert_equal("'te%xt'", shellescape("te%xt"))
-  call assert_equal("'te\\%xt'", shellescape("te%xt", 1))
-  call assert_equal("'te#xt'", shellescape("te#xt"))
-  call assert_equal("'te\\#xt'", shellescape("te#xt", 1))
-  call assert_equal("'te!xt'", shellescape("te!xt"))
-  call assert_equal("'te\\!xt'", shellescape("te!xt", 1))
-
-  call assert_equal("'te\nxt'", shellescape("te\nxt"))
-  call assert_equal("'te\\\nxt'", shellescape("te\nxt", 1))
-  set shell=tcsh
-  call assert_equal("'te\\!xt'", shellescape("te!xt"))
-  call assert_equal("'te\\\\!xt'", shellescape("te!xt", 1))
-  call assert_equal("'te\\\nxt'", shellescape("te\nxt"))
-  call assert_equal("'te\\\\\nxt'", shellescape("te\nxt", 1))
-
-  set shell=fish
-  call assert_equal("'text'", shellescape('text'))
-  call assert_equal("'te\"xt'", shellescape('te"xt'))
-  call assert_equal("'te'\\''xt'", shellescape("te'xt"))
-
-  call assert_equal("'te%xt'", shellescape("te%xt"))
-  call assert_equal("'te\\%xt'", shellescape("te%xt", 1))
-  call assert_equal("'te#xt'", shellescape("te#xt"))
-  call assert_equal("'te\\#xt'", shellescape("te#xt", 1))
-  call assert_equal("'te!xt'", shellescape("te!xt"))
-  call assert_equal("'te\\!xt'", shellescape("te!xt", 1))
-
-  call assert_equal("'te\\\\xt'", shellescape("te\\xt"))
-  call assert_equal("'te\\\\xt'", shellescape("te\\xt", 1))
-  call assert_equal("'te\\\\'\\''xt'", shellescape("te\\'xt"))
-  call assert_equal("'te\\\\'\\''xt'", shellescape("te\\'xt", 1))
-  call assert_equal("'te\\\\!xt'", shellescape("te\\!xt"))
-  call assert_equal("'te\\\\\\!xt'", shellescape("te\\!xt", 1))
-  call assert_equal("'te\\\\%xt'", shellescape("te\\%xt"))
-  call assert_equal("'te\\\\\\%xt'", shellescape("te\\%xt", 1))
-  call assert_equal("'te\\\\#xt'", shellescape("te\\#xt"))
-  call assert_equal("'te\\\\\\#xt'", shellescape("te\\#xt", 1))
-
-  let &shell = save_shell
-endfunc
-
 func Test_setbufvar_options()
   " This tests that aucmd_prepbuf() and aucmd_restbuf() properly restore the
   " window layout and cursor position.
@@ -2590,8 +2547,6 @@ endfunc
 
 " Test confirm({msg} [, {choices} [, {default} [, {type}]]])
 func Test_confirm()
-  " requires a UI to be active
-  throw 'Skipped: use test/functional/vimscript/input_spec.lua'
   CheckUnix
   CheckNotGui
 
@@ -3401,6 +3356,73 @@ func Test_getmousepos()
         \ column: 8,
         \ coladd: 21,
         \ }, getmousepos())
+
+  30vnew
+  setlocal smoothscroll number
+  call setline(1, join(range(100)))
+  exe "normal! \<C-E>"
+  call Ntest_setmouse(1, 5)
+  call assert_equal(#{
+        \ screenrow: 1,
+        \ screencol: 5,
+        \ winid: win_getid(),
+        \ winrow: 1,
+        \ wincol: 5,
+        \ line: 1,
+        \ column: 27,
+        \ coladd: 0,
+        \ }, getmousepos())
+  call Ntest_setmouse(2, 5)
+  call assert_equal(#{
+        \ screenrow: 2,
+        \ screencol: 5,
+        \ winid: win_getid(),
+        \ winrow: 2,
+        \ wincol: 5,
+        \ line: 1,
+        \ column: 53,
+        \ coladd: 0,
+        \ }, getmousepos())
+
+  exe "normal! \<C-E>"
+  call Ntest_setmouse(1, 5)
+  call assert_equal(#{
+        \ screenrow: 1,
+        \ screencol: 5,
+        \ winid: win_getid(),
+        \ winrow: 1,
+        \ wincol: 5,
+        \ line: 1,
+        \ column: 53,
+        \ coladd: 0,
+        \ }, getmousepos())
+  call Ntest_setmouse(2, 5)
+  call assert_equal(#{
+        \ screenrow: 2,
+        \ screencol: 5,
+        \ winid: win_getid(),
+        \ winrow: 2,
+        \ wincol: 5,
+        \ line: 1,
+        \ column: 79,
+        \ coladd: 0,
+        \ }, getmousepos())
+
+  vert resize 4
+  call Ntest_setmouse(2, 2)
+  " This used to crash Vim
+  call assert_equal(#{
+        \ screenrow: 2,
+        \ screencol: 2,
+        \ winid: win_getid(),
+        \ winrow: 2,
+        \ wincol: 2,
+        \ line: 1,
+        \ column: 53,
+        \ coladd: 0,
+        \ }, getmousepos())
+
+  bwipe!
   bwipe!
 endfunc
 
@@ -3424,6 +3446,56 @@ func Test_glob()
   call delete('XGLOB2')
 
   call assert_fails("call glob('*', 0, {})", 'E728:')
+endfunc
+
+func Test_glob2()
+  call mkdir('[XglobDir]', 'R')
+  call mkdir('abc[glob]def', 'R')
+
+  call writefile(['glob'], '[XglobDir]/Xglob')
+  call writefile(['glob'], 'abc[glob]def/Xglob')
+  if has("unix")
+    call assert_equal([], (glob('[XglobDir]/*', 0, 1)))
+    call assert_equal([], (glob('abc[glob]def/*', 0, 1)))
+    call assert_equal(['[XglobDir]/Xglob'], (glob('\[XglobDir]/*', 0, 1)))
+    call assert_equal(['abc[glob]def/Xglob'], (glob('abc\[glob]def/*', 0, 1)))
+  elseif has("win32")
+    let _sl=&shellslash
+    call assert_equal([], (glob('[XglobDir]\*', 0, 1)))
+    call assert_equal([], (glob('abc[glob]def\*', 0, 1)))
+    call assert_equal([], (glob('\[XglobDir]\*', 0, 1)))
+    call assert_equal([], (glob('abc\[glob]def\*', 0, 1)))
+    set noshellslash
+    call assert_equal(['[XglobDir]\Xglob'], (glob('[[]XglobDir]/*', 0, 1)))
+    call assert_equal(['abc[glob]def\Xglob'], (glob('abc[[]glob]def/*', 0, 1)))
+    set shellslash
+    call assert_equal(['[XglobDir]/Xglob'], (glob('[[]XglobDir]/*', 0, 1)))
+    call assert_equal(['abc[glob]def/Xglob'], (glob('abc[[]glob]def/*', 0, 1)))
+    let &shellslash=_sl
+  endif
+endfunc
+
+func Test_glob_symlinks()
+  call writefile([], 'Xglob1')
+
+  if has("win32")
+    silent !mklink XglobBad DoesNotExist
+    if v:shell_error
+      throw 'Skipped: cannot create symlinks'
+    endif
+    silent !mklink XglobOk Xglob1
+  else
+    silent !ln -s DoesNotExist XglobBad
+    silent !ln -s Xglob1 XglobOk
+  endif
+
+  " The broken symlink is excluded when alllinks is false.
+  call assert_equal(['Xglob1', 'XglobBad', 'XglobOk'], sort(glob('Xglob*', 0, 1, 1)))
+  call assert_equal(['Xglob1', 'XglobOk'], sort(glob('Xglob*', 0, 1, 0)))
+
+  call delete('Xglob1')
+  call delete('XglobBad')
+  call delete('XglobOk')
 endfunc
 
 " Test for browse()
@@ -3608,6 +3680,57 @@ func Test_glob_extended_mswin()
   let expected = ['Xtestglob/foo/bar/src/foo.cpp', 'Xtestglob/foo/bar/src/foo.h', 'Xtestglob/foo/bar/src/foo.sh']
   call assert_equal(expected, sort(glob('Xtestglob/**/foo.*', 0, 1)))
   call delete('Xtestglob', 'rf')
+endfunc
+
+" Tests for the slice() function.
+func Test_slice()
+  let lines =<< trim END
+    call assert_equal([1, 2, 3, 4, 5], slice(range(6), 1))
+    call assert_equal([2, 3, 4, 5], slice(range(6), 2))
+    call assert_equal([2, 3], slice(range(6), 2, 4))
+    call assert_equal([0, 1, 2, 3], slice(range(6), 0, 4))
+    call assert_equal([1, 2, 3], slice(range(6), 1, 4))
+    call assert_equal([1, 2, 3, 4], slice(range(6), 1, -1))
+    call assert_equal([1, 2], slice(range(6), 1, -3))
+    call assert_equal([1], slice(range(6), 1, -4))
+    call assert_equal([], slice(range(6), 1, -5))
+    call assert_equal([], slice(range(6), 1, -6))
+
+    call assert_equal(0z1122334455, slice(0z001122334455, 1))
+    call assert_equal(0z22334455, slice(0z001122334455, 2))
+    call assert_equal(0z2233, slice(0z001122334455, 2, 4))
+    call assert_equal(0z00112233, slice(0z001122334455, 0, 4))
+    call assert_equal(0z112233, slice(0z001122334455, 1, 4))
+    call assert_equal(0z11223344, slice(0z001122334455, 1, -1))
+    call assert_equal(0z1122, slice(0z001122334455, 1, -3))
+    call assert_equal(0z11, slice(0z001122334455, 1, -4))
+    call assert_equal(0z, slice(0z001122334455, 1, -5))
+    call assert_equal(0z, slice(0z001122334455, 1, -6))
+
+    call assert_equal('12345', slice('012345', 1))
+    call assert_equal('2345', slice('012345', 2))
+    call assert_equal('23', slice('012345', 2, 4))
+    call assert_equal('0123', slice('012345', 0, 4))
+    call assert_equal('123', slice('012345', 1, 4))
+    call assert_equal('1234', slice('012345', 1, -1))
+    call assert_equal('12', slice('012345', 1, -3))
+    call assert_equal('1', slice('012345', 1, -4))
+    call assert_equal('', slice('012345', 1, -5))
+    call assert_equal('', slice('012345', 1, -6))
+
+    #" Composing chars are treated as a part of the preceding base char.
+    call assert_equal('β̳́γ̳̂δ̳̃ε̳̄ζ̳̅', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1))
+    call assert_equal('γ̳̂δ̳̃ε̳̄ζ̳̅', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(2))
+    call assert_equal('γ̳̂δ̳̃', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(2, 4))
+    call assert_equal('ὰ̳β̳́γ̳̂δ̳̃', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(0, 4))
+    call assert_equal('β̳́γ̳̂δ̳̃', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, 4))
+    call assert_equal('β̳́γ̳̂δ̳̃ε̳̄', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, -1))
+    call assert_equal('β̳́γ̳̂', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, -3))
+    call assert_equal('β̳́', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, -4))
+    call assert_equal('', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, -5))
+    call assert_equal('', 'ὰ̳β̳́γ̳̂δ̳̃ε̳̄ζ̳̅'->slice(1, -6))
+  END
+  call CheckLegacyAndVim9Success(lines)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

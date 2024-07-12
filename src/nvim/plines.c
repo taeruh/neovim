@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "nvim/api/extmark.h"
 #include "nvim/ascii_defs.h"
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
@@ -44,6 +45,8 @@
 /// @param col
 ///
 /// @return Number of cells.
+///
+/// @see charsize_nowrap()
 int win_chartabsize(win_T *wp, char *p, colnr_T col)
 {
   buf_T *buf = wp->w_buffer;
@@ -55,7 +58,7 @@ int win_chartabsize(win_T *wp, char *p, colnr_T col)
 
 /// Like linetabsize_str(), but "s" starts at virtual column "startvcol".
 ///
-/// @param startcol
+/// @param startvcol
 /// @param s
 ///
 /// @return Number of cells the string will take on the screen.
@@ -74,7 +77,7 @@ int linetabsize_col(int startvcol, char *s)
 /// screen, taking into account the size of a tab and inline virtual text.
 int linetabsize(win_T *wp, linenr_T lnum)
 {
-  return win_linetabsize(wp, lnum, ml_get_buf(wp->w_buffer, lnum), (colnr_T)MAXCOL);
+  return win_linetabsize(wp, lnum, ml_get_buf(wp->w_buffer, lnum), MAXCOL);
 }
 
 static const uint32_t inline_filter[4] = {[kMTMetaInline] = kMTFilterSelect };
@@ -136,8 +139,10 @@ CharSize charsize_regular(CharsizeArg *csarg, char *const cur, colnr_T const vco
   int is_doublewidth = false;
   if (use_tabstop) {
     size = tabstop_padding(vcol, buf->b_p_ts, buf->b_p_vts_array);
-  } else if (*cur == NUL && !has_lcs_eol) {
-    size = 0;
+  } else if (*cur == NUL) {
+    // 1 cell for EOL list char (if present), as opposed to the two cell ^@
+    // for a NUL character in the text.
+    size = has_lcs_eol ? 1 : 0;
   } else if (cur_char < 0) {
     size = kInvalidByteCells;
   } else {
@@ -153,7 +158,8 @@ CharSize charsize_regular(CharsizeArg *csarg, char *const cur, colnr_T const vco
       if (mark.pos.row != csarg->virt_row || mark.pos.col > col) {
         break;
       } else if (mark.pos.col == col) {
-        if (!mt_end(mark) && mark.flags & (MT_FLAG_DECOR_VIRT_TEXT_INLINE)) {
+        if (!mt_end(mark) && (mark.flags & MT_FLAG_DECOR_VIRT_TEXT_INLINE)
+            && ns_in_win(mark.ns, wp)) {
           DecorInline decor = mt_decor(mark);
           DecorVirtText *vt = decor.ext ? decor.data.ext.vt : NULL;
           while (vt) {
@@ -231,7 +237,7 @@ CharSize charsize_regular(CharsizeArg *csarg, char *const cur, colnr_T const vco
       wcol += col_off_prev;
     }
 
-    if (wcol + size > wp->w_width) {
+    if (wcol + size > wp->w_width_inner) {
       // cells taken by 'showbreak'/'breakindent' halfway current char
       int head_mid = csarg->indent_width;
       if (head_mid == INT_MIN) {
@@ -244,7 +250,7 @@ CharSize charsize_regular(CharsizeArg *csarg, char *const cur, colnr_T const vco
         }
         csarg->indent_width = head_mid;
       }
-      if (head_mid > 0 && wcol + size > wp->w_width_inner) {
+      if (head_mid > 0) {
         // Calculate effective window width.
         int prev_rem = wp->w_width_inner - wcol;
         int width = width2 - head_mid;
@@ -372,6 +378,20 @@ CharSize charsize_fast(CharsizeArg *csarg, colnr_T const vcol, int32_t const cur
   return charsize_fast_impl(csarg->win, csarg->use_tabstop, vcol, cur_char);
 }
 
+/// Get the number of cells taken up on the screen at given virtual column.
+///
+/// @see win_chartabsize()
+int charsize_nowrap(buf_T *buf, bool use_tabstop, colnr_T vcol, int32_t cur_char)
+{
+  if (cur_char == TAB && use_tabstop) {
+    return tabstop_padding(vcol, buf->b_p_ts, buf->b_p_vts_array);
+  } else if (cur_char < 0) {
+    return kInvalidByteCells;
+  } else {
+    return char2cells(cur_char);
+  }
+}
+
 /// Check that virtual column "vcol" is in the rightmost column of window "wp".
 ///
 /// @param  wp    window
@@ -402,48 +422,63 @@ static bool in_win_border(win_T *wp, colnr_T vcol)
 
 /// Calculate virtual column until the given "len".
 ///
-/// @param arg  Argument to charsize functions.
-/// @param vcol Starting virtual column.
-/// @param len  First byte of the end character, or MAXCOL.
+/// @param csarg    Argument to charsize functions.
+/// @param vcol_arg Starting virtual column.
+/// @param len      First byte of the end character, or MAXCOL.
 ///
 /// @return virtual column before the character at "len",
-/// or full size of the line if "len" is MAXCOL.
-int linesize_regular(CharsizeArg *const csarg, int vcol, colnr_T const len)
+///         or full size of the line if "len" is MAXCOL.
+int linesize_regular(CharsizeArg *const csarg, int vcol_arg, colnr_T const len)
 {
   char *const line = csarg->line;
+  int64_t vcol = vcol_arg;
 
   StrCharInfo ci = utf_ptr2StrCharInfo(line);
   while (ci.ptr - line < len && *ci.ptr != NUL) {
-    vcol += charsize_regular(csarg, ci.ptr, vcol, ci.chr.value).width;
+    vcol += charsize_regular(csarg, ci.ptr, vcol_arg, ci.chr.value).width;
     ci = utfc_next(ci);
+    if (vcol > MAXCOL) {
+      vcol_arg = MAXCOL;
+      break;
+    } else {
+      vcol_arg = (int)vcol;
+    }
   }
 
   // Check for inline virtual text after the end of the line.
-  if (len == MAXCOL && csarg->virt_row >= 0) {
-    (void)charsize_regular(csarg, ci.ptr, vcol, ci.chr.value);
+  if (len == MAXCOL && csarg->virt_row >= 0 && *ci.ptr == NUL) {
+    (void)charsize_regular(csarg, ci.ptr, vcol_arg, ci.chr.value);
     vcol += csarg->cur_text_width_left + csarg->cur_text_width_right;
+    vcol_arg = vcol > MAXCOL ? MAXCOL : (int)vcol;
   }
 
-  return vcol;
+  return vcol_arg;
 }
 
-/// Like linesize_regular(), but can be used when CStype is kCharsizeFast.
+/// Like linesize_regular(), but can be used when CSType is kCharsizeFast.
 ///
 /// @see linesize_regular
-int linesize_fast(CharsizeArg const *const csarg, int vcol, colnr_T const len)
+int linesize_fast(CharsizeArg const *const csarg, int vcol_arg, colnr_T const len)
 {
   win_T *const wp = csarg->win;
   bool const use_tabstop = csarg->use_tabstop;
 
   char *const line = csarg->line;
+  int64_t vcol = vcol_arg;
 
   StrCharInfo ci = utf_ptr2StrCharInfo(line);
   while (ci.ptr - line < len && *ci.ptr != NUL) {
-    vcol += charsize_fast_impl(wp, use_tabstop, vcol, ci.chr.value).width;
+    vcol += charsize_fast_impl(wp, use_tabstop, vcol_arg, ci.chr.value).width;
     ci = utfc_next(ci);
+    if (vcol > MAXCOL) {
+      vcol_arg = MAXCOL;
+      break;
+    } else {
+      vcol_arg = (int)vcol;
+    }
   }
 
-  return vcol;
+  return vcol_arg;
 }
 
 /// Get how many virtual columns inline virtual text should offset the cursor.
@@ -537,7 +572,7 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *en
     if (ci.chr.value == TAB
         && (State & MODE_NORMAL)
         && !wp->w_p_list
-        && !virtual_active()
+        && !virtual_active(wp)
         && !(VIsual_active && ((*p_sel == 'e') || ltoreq(*pos, VIsual)))) {
       // cursor at end
       *cursor = vcol + incr - 1;
@@ -553,7 +588,7 @@ void getvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *en
 ///
 /// @param posp
 ///
-/// @retujrn The virtual cursor column.
+/// @return The virtual cursor column.
 colnr_T getvcol_nolist(pos_T *posp)
 {
   int list_save = curwin->w_p_list;
@@ -580,7 +615,7 @@ void getvvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *e
 {
   colnr_T col;
 
-  if (virtual_active()) {
+  if (virtual_active(wp)) {
     // For virtual mode, only want one value
     getvcol(wp, pos, &col, NULL, NULL);
 
@@ -590,7 +625,7 @@ void getvvcol(win_T *wp, pos_T *pos, colnr_T *start, colnr_T *cursor, colnr_T *e
     // Cannot put the cursor on part of a wide character.
     char *ptr = ml_get_buf(wp->w_buffer, pos->lnum);
 
-    if (pos->col < (colnr_T)strlen(ptr)) {
+    if (pos->col < ml_get_buf_len(wp->w_buffer, pos->lnum)) {
       int c = utf_ptr2char(ptr + pos->col);
       if ((c != TAB) && vim_isprintc(c)) {
         endadd = (colnr_T)(char2cells(c) - 1);
@@ -847,26 +882,29 @@ int plines_win_full(win_T *wp, linenr_T lnum, linenr_T *const nextp, bool *const
           (lnum == wp->w_topline ? wp->w_topfill : win_get_fill(wp, lnum)));
 }
 
-/// Get the number of screen lines a range of buffer lines will take in window "wp".
-/// This takes care of both folds and topfill.
+/// Return number of window lines a physical line range will occupy in window "wp".
+/// Takes into account folding, 'wrap', topfill and filler lines beyond the end of the buffer.
 ///
 /// XXX: Because of topfill, this only makes sense when first >= wp->w_topline.
 ///
-/// @param first            first line number
-/// @param last             last line number
-/// @param limit_winheight  when true limit each line to window height
+/// @param first  first line number
+/// @param last   last line number
+/// @param max    number of lines to limit the height to
 ///
 /// @see win_text_height
-int plines_m_win(win_T *wp, linenr_T first, linenr_T last, bool limit_winheight)
+int plines_m_win(win_T *wp, linenr_T first, linenr_T last, int max)
 {
   int count = 0;
 
-  while (first <= last) {
+  while (first <= last && count < max) {
     linenr_T next = first;
-    count += plines_win_full(wp, first, &next, NULL, false, limit_winheight);
+    count += plines_win_full(wp, first, &next, NULL, false, false);
     first = next + 1;
   }
-  return count;
+  if (first == wp->w_buffer->b_ml.ml_line_count + 1) {
+    count += win_get_fill(wp, first);
+  }
+  return MIN(max, count);
 }
 
 /// Get the number of screen lines a range of text will take in window "wp".
@@ -899,7 +937,7 @@ int64_t win_text_height(win_T *const wp, const linenr_T start_lnum, const int64_
 
   if (start_vcol >= 0) {
     linenr_T lnum_next = lnum;
-    const bool folded = hasFoldingWin(wp, lnum, &lnum, &lnum_next, true, NULL);
+    const bool folded = hasFolding(wp, lnum, &lnum, &lnum_next);
     height_cur_nofill = folded ? 1 : plines_win_nofill(wp, lnum, false);
     height_sum_nofill += height_cur_nofill;
     const int64_t row_off = (start_vcol < width1 || width2 <= 0)
@@ -911,7 +949,7 @@ int64_t win_text_height(win_T *const wp, const linenr_T start_lnum, const int64_
 
   while (lnum <= end_lnum) {
     linenr_T lnum_next = lnum;
-    const bool folded = hasFoldingWin(wp, lnum, &lnum, &lnum_next, true, NULL);
+    const bool folded = hasFolding(wp, lnum, &lnum, &lnum_next);
     height_sum_fill += win_get_fill(wp, lnum);
     height_cur_nofill = folded ? 1 : plines_win_nofill(wp, lnum, false);
     height_sum_nofill += height_cur_nofill;

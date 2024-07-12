@@ -15,6 +15,7 @@
 #include "nvim/charset.h"
 #include "nvim/cmdexpand_defs.h"
 #include "nvim/drawscreen.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval_defs.h"
 #include "nvim/eval/vars.h"
@@ -549,8 +550,8 @@ static void syn_sync(win_T *wp, linenr_T start_lnum, synstate_T *last_valid)
 
     // Skip lines that end in a backslash.
     for (; start_lnum > 1; start_lnum--) {
-      char *line = ml_get(start_lnum - 1);
-      if (*line == NUL || *(line + strlen(line) - 1) != '\\') {
+      char *l = ml_get(start_lnum - 1);
+      if (*l == NUL || *(l + ml_get_len(start_lnum - 1) - 1) != '\\') {
         break;
       }
     }
@@ -2352,7 +2353,6 @@ static void find_endpos(int idx, lpos_T *startpos, lpos_T *m_endpos, lpos_T *hl_
   regmmatch_T regmatch;
   regmmatch_T best_regmatch;        // startpos/endpos of best match
   lpos_T pos;
-  char *line;
   bool had_match = false;
   char buf_chartab[32];  // chartab array for syn option iskeyword
 
@@ -2457,8 +2457,7 @@ static void find_endpos(int idx, lpos_T *startpos, lpos_T *m_endpos, lpos_T *hl_
           break;
         }
 
-        line = ml_get_buf(syn_buf, startpos->lnum);
-        int line_len = (int)strlen(line);
+        int line_len = ml_get_buf_len(syn_buf, startpos->lnum);
 
         // take care of an empty match or negative offset
         if (pos.col <= matchcol) {
@@ -2635,7 +2634,7 @@ static void syn_add_start_off(lpos_T *result, regmmatch_T *regmatch, synpat_T *s
   if (result->lnum > syn_buf->b_ml.ml_line_count) {
     // a "\n" at the end of the pattern may take us below the last line
     result->lnum = syn_buf->b_ml.ml_line_count;
-    col = (int)strlen(ml_get_buf(syn_buf, result->lnum));
+    col = ml_get_buf_len(syn_buf, result->lnum);
   }
   if (off != 0) {
     base = ml_get_buf(syn_buf, result->lnum);
@@ -2735,7 +2734,7 @@ static int check_keyword_id(char *const line, const int startcol, int *const end
   // Must make a copy of the keyword, so we can add a NUL and make it
   // lowercase.
   char keyword[MAXKEYWLEN + 1];         // assume max. keyword len is 80
-  xstrlcpy(keyword, kwp, (size_t)kwlen + 1);
+  xmemcpyz(keyword, kwp, (size_t)kwlen);
 
   keyentry_T *kp = NULL;
 
@@ -4951,7 +4950,7 @@ static int get_id_list(char **const arg, const int keylen, int16_t **const list,
     do {
       for (end = p; *end && !ascii_iswhite(*end) && *end != ','; end++) {}
       char *const name = xmalloc((size_t)(end - p) + 3);   // leave room for "^$"
-      xstrlcpy(name + 1, p, (size_t)(end - p) + 1);
+      xmemcpyz(name + 1, p, (size_t)(end - p));
       if (strcmp(name + 1, "ALLBUT") == 0
           || strcmp(name + 1, "ALL") == 0
           || strcmp(name + 1, "TOP") == 0
@@ -4993,7 +4992,7 @@ static int get_id_list(char **const arg, const int keylen, int16_t **const list,
         } else {
           // Handle match of regexp with group names.
           *name = '^';
-          STRCAT(name, "$");
+          strcat(name, "$");
           regmatch.regprog = vim_regcomp(name, RE_MAGIC);
           if (regmatch.regprog == NULL) {
             failed = true;

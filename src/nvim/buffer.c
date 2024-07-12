@@ -43,6 +43,7 @@
 #include "nvim/diff.h"
 #include "nvim/digraph.h"
 #include "nvim/drawscreen.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/vars.h"
@@ -117,7 +118,6 @@
 # include "buffer.c.generated.h"
 #endif
 
-static const char *e_auabort = N_("E855: Autocommands caused command to abort");
 static const char e_attempt_to_delete_buffer_that_is_in_use_str[]
   = N_("E937: Attempt to delete a buffer that is in use: %s");
 
@@ -268,7 +268,7 @@ int open_buffer(bool read_stdin, exarg_T *eap, int flags_arg)
   // The autocommands in readfile() may change the buffer, but only AFTER
   // reading the file.
   set_bufref(&old_curbuf, curbuf);
-  modified_was_set = false;
+  curbuf->b_modified_was_set = false;
 
   // mark cursor position as being invalid
   curwin->w_valid = 0;
@@ -351,7 +351,7 @@ int open_buffer(bool read_stdin, exarg_T *eap, int flags_arg)
   // the changed flag.  Unless in readonly mode: "ls | nvim -R -".
   // When interrupted and 'cpoptions' contains 'i' set changed flag.
   if ((got_int && vim_strchr(p_cpo, CPO_INTMOD) != NULL)
-      || modified_was_set               // ":set modified" used in autocmd
+      || curbuf->b_modified_was_set  // autocmd did ":set modified"
       || (aborting() && vim_strchr(p_cpo, CPO_INTMOD) != NULL)) {
     changed(curbuf);
   } else if (retval != FAIL && !read_stdin && !read_fifo) {
@@ -569,7 +569,7 @@ bool close_buffer(win_T *win, buf_T *buf, int action, bool abort_if_last, bool i
     }
     buf->b_locked--;
     buf->b_locked_split--;
-    if (abort_if_last && last_nonfloat(win)) {
+    if (abort_if_last && one_window(win)) {
       // Autocommands made this the only window.
       emsg(_(e_auabort));
       return false;
@@ -588,7 +588,7 @@ bool close_buffer(win_T *win, buf_T *buf, int action, bool abort_if_last, bool i
       }
       buf->b_locked--;
       buf->b_locked_split--;
-      if (abort_if_last && last_nonfloat(win)) {
+      if (abort_if_last && one_window(win)) {
         // Autocommands made this the only window.
         emsg(_(e_auabort));
         return false;
@@ -698,6 +698,9 @@ bool close_buffer(win_T *win, buf_T *buf, int action, bool abort_if_last, bool i
     // Do not wipe out the buffer if it is used in a window.
     if (buf->b_nwindows > 0) {
       return false;
+    }
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+      mark_forget_file(wp, buf->b_fnum);
     }
     if (buf->b_sfname != buf->b_ffname) {
       XFREE_CLEAR(buf->b_sfname);
@@ -939,6 +942,21 @@ static void free_buffer_stuff(buf_T *buf, int free_flags)
 void goto_buffer(exarg_T *eap, int start, int dir, int count)
 {
   const int save_sea = swap_exists_action;
+  bool skip_help_buf;
+
+  switch (eap->cmdidx) {
+  case CMD_bnext:
+  case CMD_sbnext:
+  case CMD_bNext:
+  case CMD_bprevious:
+  case CMD_sbNext:
+  case CMD_sbprevious:
+    skip_help_buf = true;
+    break;
+  default:
+    skip_help_buf = false;
+    break;
+  }
 
   bufref_T old_curbuf;
   set_bufref(&old_curbuf, curbuf);
@@ -946,8 +964,9 @@ void goto_buffer(exarg_T *eap, int start, int dir, int count)
   if (swap_exists_action == SEA_NONE) {
     swap_exists_action = SEA_DIALOG;
   }
-  do_buffer(*eap->cmd == 's' ? DOBUF_SPLIT : DOBUF_GOTO,
-            start, dir, count, eap->forceit);
+  (void)do_buffer_ext(*eap->cmd == 's' ? DOBUF_SPLIT : DOBUF_GOTO, start, dir, count,
+                      (eap->forceit ? DOBUF_FORCEIT : 0) |
+                      (skip_help_buf ? DOBUF_SKIPHELP : 0));
 
   if (swap_exists_action == SEA_QUIT && *eap->cmd == 's') {
     cleanup_T cs;
@@ -1184,32 +1203,6 @@ static int empty_curbuf(bool close_others, int forceit, int action)
   return retval;
 }
 
-/// Remove every jump list entry referring to a given buffer.
-/// This function will also adjust the current jump list index.
-void buf_remove_from_jumplist(buf_T *deleted_buf)
-{
-  // Remove all jump list entries that match the deleted buffer.
-  for (int i = curwin->w_jumplistlen - 1; i >= 0; i--) {
-    buf_T *buf = buflist_findnr(curwin->w_jumplist[i].fmark.fnum);
-
-    if (buf == deleted_buf) {
-      // Found an entry that we want to delete.
-      curwin->w_jumplistlen -= 1;
-
-      // If the current jump list index behind the entry we want to
-      // delete, move it back by one.
-      if (curwin->w_jumplistidx > i && curwin->w_jumplistidx > 0) {
-        curwin->w_jumplistidx -= 1;
-      }
-
-      // Actually remove the entry from the jump list.
-      for (int d = i; d < curwin->w_jumplistlen; d++) {
-        curwin->w_jumplist[d] = curwin->w_jumplist[d + 1];
-      }
-    }
-  }
-}
-
 /// Implementation of the commands for the buffer list.
 ///
 /// action == DOBUF_GOTO     go to specified buffer
@@ -1225,10 +1218,10 @@ void buf_remove_from_jumplist(buf_T *deleted_buf)
 ///
 /// @param dir  FORWARD or BACKWARD
 /// @param count  buffer number or number of buffers
-/// @param forceit  true for :...!
+/// @param flags  see @ref dobuf_flags_value
 ///
 /// @return  FAIL or OK.
-int do_buffer(int action, int start, int dir, int count, int forceit)
+static int do_buffer_ext(int action, int start, int dir, int count, int flags)
 {
   buf_T *buf;
   buf_T *bp;
@@ -1280,8 +1273,12 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
           buf = lastbuf;
         }
       }
-      // don't count unlisted buffers
-      if (unload || buf->b_p_bl) {
+      // Don't count unlisted buffers.
+      // Avoid non-help buffers if the starting point was a non-help buffer and
+      // vice-versa.
+      if (unload
+          || (buf->b_p_bl
+              && ((flags & DOBUF_SKIPHELP) == 0 || buf->b_help == bp->b_help))) {
         count--;
         bp = NULL;              // use this buffer as new starting point
       }
@@ -1306,6 +1303,14 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
     }
     return FAIL;
   }
+
+  if (action == DOBUF_GOTO
+      && buf != curbuf
+      && !check_can_set_curbuf_forceit((flags & DOBUF_FORCEIT) ? true : false)) {
+    // disallow navigating to another buffer when 'winfixbuf' is applied
+    return FAIL;
+  }
+
   if ((action == DOBUF_GOTO || action == DOBUF_SPLIT) && (buf->b_flags & BF_DUMMY)) {
     // disallow navigating to the dummy buffer
     semsg(_(e_nobufnr), count);
@@ -1327,7 +1332,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
       return FAIL;
     }
 
-    if (!forceit && bufIsChanged(buf)) {
+    if ((flags & DOBUF_FORCEIT) == 0 && bufIsChanged(buf)) {
       if ((p_confirm || (cmdmod.cmod_flags & CMOD_CONFIRM)) && p_write) {
         dialog_changed(buf, false);
         if (!bufref_valid(&bufref)) {
@@ -1347,7 +1352,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
       }
     }
 
-    if (!forceit && buf->terminal && terminal_running(buf->terminal)) {
+    if (!(flags & DOBUF_FORCEIT) && buf->terminal && terminal_running(buf->terminal)) {
       if (p_confirm || (cmdmod.cmod_flags & CMOD_CONFIRM)) {
         if (!dialog_close_terminal(buf)) {
           return FAIL;
@@ -1357,6 +1362,8 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
         return FAIL;
       }
     }
+
+    int buf_fnum = buf->b_fnum;
 
     // When closing the current buffer stop Visual mode.
     if (buf == curbuf && VIsual_active) {
@@ -1373,7 +1380,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
       }
     }
     if (bp == NULL && buf == curbuf) {
-      return empty_curbuf(true, forceit, action);
+      return empty_curbuf(true, (flags & DOBUF_FORCEIT), action);
     }
 
     // If the deleted buffer is the current one, close the current window
@@ -1390,8 +1397,10 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
 
     // If the buffer to be deleted is not the current one, delete it here.
     if (buf != curbuf) {
-      // Remove the buffer to be deleted from the jump list.
-      buf_remove_from_jumplist(buf);
+      if (jop_flags & JOP_UNLOAD) {
+        // Remove the buffer to be deleted from the jump list.
+        mark_jumplist_forget_file(curwin, buf_fnum);
+      }
 
       close_windows(buf, false);
 
@@ -1414,28 +1423,37 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
     if (au_new_curbuf.br_buf != NULL && bufref_valid(&au_new_curbuf)) {
       buf = au_new_curbuf.br_buf;
     } else if (curwin->w_jumplistlen > 0) {
-      // Remove the current buffer from the jump list.
-      buf_remove_from_jumplist(curbuf);
+      if (jop_flags & JOP_UNLOAD) {
+        // Remove the buffer from the jump list.
+        mark_jumplist_forget_file(curwin, buf_fnum);
+      }
 
       // It's possible that we removed all jump list entries, in that case we need to try another
       // approach
       if (curwin->w_jumplistlen > 0) {
-        // If the index is the same as the length, the current position was not yet added to the jump
-        // list. So we can safely go back to the last entry and search from there.
-        if (curwin->w_jumplistidx == curwin->w_jumplistlen) {
-          curwin->w_jumplistidx = curwin->w_jumplistlen - 1;
-        }
-
         int jumpidx = curwin->w_jumplistidx;
 
+        if (jop_flags & JOP_UNLOAD) {
+          // If the index is the same as the length, the current position was not yet added to the
+          // jump list. So we can safely go back to the last entry and search from there.
+          if (jumpidx == curwin->w_jumplistlen) {
+            jumpidx = curwin->w_jumplistidx = curwin->w_jumplistlen - 1;
+          }
+        } else {
+          jumpidx--;
+          if (jumpidx < 0) {
+            jumpidx = curwin->w_jumplistlen - 1;
+          }
+        }
+
         forward = jumpidx;
-        do {
+        while ((jop_flags & JOP_UNLOAD) || jumpidx != curwin->w_jumplistidx) {
           buf = buflist_findnr(curwin->w_jumplist[jumpidx].fmark.fnum);
 
           if (buf != NULL) {
-            // Skip unlisted bufs.  Also skip a quickfix
+            // Skip current and unlisted bufs.  Also skip a quickfix
             // buffer, it might be deleted soon.
-            if (!buf->b_p_bl || bt_quickfix(buf)) {
+            if (buf == curbuf || !buf->b_p_bl || bt_quickfix(buf)) {
               buf = NULL;
             } else if (buf->b_ml.ml_mfp == NULL) {
               // skip unloaded buf, but may keep it for later
@@ -1446,8 +1464,10 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
             }
           }
           if (buf != NULL) {         // found a valid buffer: stop searching
-            curwin->w_jumplistidx = jumpidx;
-            update_jumplist = false;
+            if (jop_flags & JOP_UNLOAD) {
+              curwin->w_jumplistidx = jumpidx;
+              update_jumplist = false;
+            }
             break;
           }
           // advance to older entry in jump list
@@ -1460,7 +1480,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
           if (jumpidx == forward) {               // List exhausted for sure
             break;
           }
-        } while (jumpidx != curwin->w_jumplistidx);
+        }
       }
     }
 
@@ -1518,7 +1538,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
   if (buf == NULL) {
     // Autocommands must have wiped out all other buffers.  Only option
     // now is to make the current buffer empty.
-    return empty_curbuf(false, forceit, action);
+    return empty_curbuf(false, (flags & DOBUF_FORCEIT), action);
   }
 
   // make "buf" the current buffer
@@ -1539,7 +1559,7 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
   }
 
   // Check if the current buffer may be abandoned.
-  if (action == DOBUF_GOTO && !can_abandon(curbuf, forceit)) {
+  if (action == DOBUF_GOTO && !can_abandon(curbuf, (flags & DOBUF_FORCEIT))) {
     if ((p_confirm || (cmdmod.cmod_flags & CMOD_CONFIRM)) && p_write) {
       bufref_T bufref;
       set_bufref(&bufref, buf);
@@ -1569,6 +1589,11 @@ int do_buffer(int action, int start, int dir, int count, int forceit)
   return OK;
 }
 
+int do_buffer(int action, int start, int dir, int count, int forceit)
+{
+  return do_buffer_ext(action, start, dir, count, forceit ? DOBUF_FORCEIT : 0);
+}
+
 /// Set current buffer to "buf".  Executes autocommands and closes current
 /// buffer.
 ///
@@ -1584,6 +1609,7 @@ void set_curbuf(buf_T *buf, int action, bool update_jumplist)
   int unload = (action == DOBUF_UNLOAD || action == DOBUF_DEL
                 || action == DOBUF_WIPE);
   OptInt old_tw = curbuf->b_p_tw;
+  const int last_winid = get_last_winid();
 
   if (update_jumplist) {
     setpcmark();
@@ -1612,7 +1638,11 @@ void set_curbuf(buf_T *buf, int action, bool update_jumplist)
     if (prevbuf == curwin->w_buffer) {
       reset_synblock(curwin);
     }
-    if (unload) {
+    // autocommands may have opened a new window
+    // with prevbuf, grr
+    if (unload
+        || (last_winid != get_last_winid()
+            && strchr("wdu", prevbuf->b_p_bh[0]) != NULL)) {
       close_windows(prevbuf, false);
     }
     if (bufref_valid(&prevbufref) && !aborting()) {
@@ -1642,6 +1672,11 @@ void set_curbuf(buf_T *buf, int action, bool update_jumplist)
   // If curwin->w_buffer is null, enter_buffer() will make it valid again
   bool valid = buf_valid(buf);
   if ((valid && buf != curbuf && !aborting()) || curwin->w_buffer == NULL) {
+    // autocommands changed curbuf and we will move to another
+    // buffer soon, so decrement curbuf->b_nwindows
+    if (curbuf != NULL && prevbuf != curbuf) {
+      curbuf->b_nwindows--;
+    }
     // If the buffer is not valid but curwin->w_buffer is NULL we must
     // enter some buffer.  Using the last one is hopefully OK.
     if (!valid) {
@@ -1710,7 +1745,7 @@ void enter_buffer(buf_T *buf)
     // ":ball" used in an autocommand.  If there already is a filetype we
     // might prefer to keep it.
     if (*curbuf->b_p_ft == NUL) {
-      did_filetype = false;
+      curbuf->b_did_filetype = false;
     }
 
     open_buffer(false, NULL, 0);
@@ -1737,7 +1772,7 @@ void enter_buffer(buf_T *buf)
   maketitle();
   // when autocmds didn't change it
   if (curwin->w_topline == 1 && !curwin->w_topline_was_set) {
-    scroll_cursor_halfway(false, false);  // redisplay at correct position
+    scroll_cursor_halfway(curwin, false, false);  // redisplay at correct position
   }
 
   // Change directories when the 'acd' option is set.
@@ -2061,6 +2096,7 @@ void free_buf_options(buf_T *buf, bool free_p_ff)
   clear_string_option(&buf->b_p_lop);
   clear_string_option(&buf->b_p_cinsd);
   clear_string_option(&buf->b_p_cinw);
+  clear_string_option(&buf->b_p_cot);
   clear_string_option(&buf->b_p_cpt);
   clear_string_option(&buf->b_p_cfu);
   callback_free(&buf->b_cfu_cb);
@@ -2157,7 +2193,7 @@ int buflist_getfile(int n, linenr_T lnum, int options, int forceit)
     // cursor is at to BOL and w_cursor.lnum is checked due to getfile()
     if (!p_sol && col != 0) {
       curwin->w_cursor.col = col;
-      check_cursor_col();
+      check_cursor_col(curwin);
       curwin->w_cursor.coladd = 0;
       curwin->w_set_curswant = true;
     }
@@ -2182,7 +2218,7 @@ void buflist_getfpos(void)
     curwin->w_cursor.col = 0;
   } else {
     curwin->w_cursor.col = fpos->col;
-    check_cursor_col();
+    check_cursor_col(curwin);
     curwin->w_cursor.coladd = 0;
     curwin->w_set_curswant = true;
   }
@@ -2377,10 +2413,8 @@ static int buf_time_compare(const void *s1, const void *s2)
 /// @return  OK if matches found, FAIL otherwise.
 int ExpandBufnames(char *pat, int *num_file, char ***file, int options)
 {
-  int count = 0;
-  int round;
-  char *p;
   bufmatch_T *matches = NULL;
+  bool to_free = false;
 
   *num_file = 0;                    // return values in case of FAIL
   *file = NULL;
@@ -2392,125 +2426,115 @@ int ExpandBufnames(char *pat, int *num_file, char ***file, int options)
   const bool fuzzy = cmdline_fuzzy_complete(pat);
 
   char *patc = NULL;
+  fuzmatch_str_T *fuzmatch = NULL;
+  regmatch_T regmatch;
+
   // Make a copy of "pat" and change "^" to "\(^\|[\/]\)" (if doing regular
   // expression matching)
   if (!fuzzy) {
-    if (*pat == '^') {
-      patc = xmalloc(strlen(pat) + 11);
-      STRCPY(patc, "\\(^\\|[\\/]\\)");
-      STRCPY(patc + 11, pat + 1);
+    if (*pat == '^' && pat[1] != NUL) {
+      patc = xstrdup(pat + 1);
+      to_free = true;
+    } else if (*pat == '^') {
+      patc = "";
     } else {
       patc = pat;
     }
+    regmatch.regprog = vim_regcomp(patc, RE_MAGIC);
   }
 
-  fuzmatch_str_T *fuzmatch = NULL;
-  // attempt == 0: try match with    '\<', match at start of word
-  // attempt == 1: try match without '\<', match anywhere
-  for (int attempt = 0; attempt <= (fuzzy ? 0 : 1); attempt++) {
-    regmatch_T regmatch;
-    if (!fuzzy) {
-      if (attempt > 0 && patc == pat) {
-        break;            // there was no anchor, no need to try again
+  int count = 0;
+  int score = 0;
+  // round == 1: Count the matches.
+  // round == 2: Build the array to keep the matches.
+  for (int round = 1; round <= 2; round++) {
+    count = 0;
+    FOR_ALL_BUFFERS(buf) {
+      if (!buf->b_p_bl) {             // skip unlisted buffers
+        continue;
       }
-      regmatch.regprog = vim_regcomp(patc + attempt * 11, RE_MAGIC);
-    }
-
-    int score = 0;
-    // round == 1: Count the matches.
-    // round == 2: Build the array to keep the matches.
-    for (round = 1; round <= 2; round++) {
-      count = 0;
-      FOR_ALL_BUFFERS(buf) {
-        if (!buf->b_p_bl) {             // skip unlisted buffers
+      if (options & BUF_DIFF_FILTER) {
+        // Skip buffers not suitable for
+        // :diffget or :diffput completion.
+        if (buf == curbuf || !diff_mode_buf(buf)) {
           continue;
         }
-        if (options & BUF_DIFF_FILTER) {
-          // Skip buffers not suitable for
-          // :diffget or :diffput completion.
-          if (buf == curbuf || !diff_mode_buf(buf)) {
-            continue;
-          }
-        }
+      }
 
-        if (!fuzzy) {
-          if (regmatch.regprog == NULL) {
-            // invalid pattern, possibly after recompiling
-            if (patc != pat) {
-              xfree(patc);
-            }
-            return FAIL;
+      char *p = NULL;
+      if (!fuzzy) {
+        if (regmatch.regprog == NULL) {
+          // invalid pattern, possibly after recompiling
+          if (to_free) {
+            xfree(patc);
           }
-          p = buflist_match(&regmatch, buf, p_wic);
-        } else {
-          p = NULL;
-          // first try matching with the short file name
-          if ((score = fuzzy_match_str(buf->b_sfname, pat)) != 0) {
-            p = buf->b_sfname;
-          }
-          if (p == NULL) {
-            // next try matching with the full path file name
-            if ((score = fuzzy_match_str(buf->b_ffname, pat)) != 0) {
-              p = buf->b_ffname;
-            }
-          }
+          return FAIL;
         }
-
+        p = buflist_match(&regmatch, buf, p_wic);
+      } else {
+        p = NULL;
+        // first try matching with the short file name
+        if ((score = fuzzy_match_str(buf->b_sfname, pat)) != 0) {
+          p = buf->b_sfname;
+        }
         if (p == NULL) {
-          continue;
-        }
-
-        if (round == 1) {
-          count++;
-          continue;
-        }
-
-        if (options & WILD_HOME_REPLACE) {
-          p = home_replace_save(buf, p);
-        } else {
-          p = xstrdup(p);
-        }
-
-        if (!fuzzy) {
-          if (matches != NULL) {
-            matches[count].buf = buf;
-            matches[count].match = p;
-            count++;
-          } else {
-            (*file)[count++] = p;
+          // next try matching with the full path file name
+          if ((score = fuzzy_match_str(buf->b_ffname, pat)) != 0) {
+            p = buf->b_ffname;
           }
-        } else {
-          fuzmatch[count].idx = count;
-          fuzmatch[count].str = p;
-          fuzmatch[count].score = score;
-          count++;
         }
       }
-      if (count == 0) {         // no match found, break here
-        break;
+
+      if (p == NULL) {
+        continue;
       }
+
       if (round == 1) {
-        if (!fuzzy) {
-          *file = xmalloc((size_t)count * sizeof(**file));
-          if (options & WILD_BUFLASTUSED) {
-            matches = xmalloc((size_t)count * sizeof(*matches));
-          }
+        count++;
+        continue;
+      }
+
+      if (options & WILD_HOME_REPLACE) {
+        p = home_replace_save(buf, p);
+      } else {
+        p = xstrdup(p);
+      }
+
+      if (!fuzzy) {
+        if (matches != NULL) {
+          matches[count].buf = buf;
+          matches[count].match = p;
+          count++;
         } else {
-          fuzmatch = xmalloc((size_t)count * sizeof(fuzmatch_str_T));
+          (*file)[count++] = p;
         }
+      } else {
+        fuzmatch[count].idx = count;
+        fuzmatch[count].str = p;
+        fuzmatch[count].score = score;
+        count++;
       }
     }
-
-    if (!fuzzy) {
-      vim_regfree(regmatch.regprog);
-      if (count) {                // match(es) found, break here
-        break;
+    if (count == 0) {         // no match found, break here
+      break;
+    }
+    if (round == 1) {
+      if (!fuzzy) {
+        *file = xmalloc((size_t)count * sizeof(**file));
+        if (options & WILD_BUFLASTUSED) {
+          matches = xmalloc((size_t)count * sizeof(*matches));
+        }
+      } else {
+        fuzmatch = xmalloc((size_t)count * sizeof(fuzmatch_str_T));
       }
     }
   }
 
-  if (!fuzzy && patc != pat) {
-    xfree(patc);
+  if (!fuzzy) {
+    vim_regfree(regmatch.regprog);
+    if (to_free) {
+      xfree(patc);
+    }
   }
 
   if (!fuzzy) {
@@ -3254,7 +3278,7 @@ void fileinfo(int fullname, int shorthelp, bool dont_truncate)
                      (int64_t)curwin->w_cursor.lnum,
                      (int64_t)curbuf->b_ml.ml_line_count,
                      n);
-    validate_virtcol();
+    validate_virtcol(curwin);
     size_t len = strlen(buffer);
     col_print(buffer + len, IOSIZE - len,
               (int)curwin->w_cursor.col + 1, (int)curwin->w_virtcol + 1);
@@ -3448,7 +3472,7 @@ void maketitle(void)
       int len = (int)strlen(buf_p);
       if (len > 100) {
         len -= 100;
-        len += utf_cp_tail_off(buf_p, buf_p + len) + 1;
+        len += utf_cp_bounds(buf_p, buf_p + len).end_off;
         buf_p += len;
       }
       STRCPY(icon_str, buf_p);
@@ -3723,7 +3747,7 @@ void ex_buffer_all(exarg_T *eap)
 
       // Open the buffer in this window.
       swap_exists_action = SEA_DIALOG;
-      set_curbuf(buf, DOBUF_GOTO, false);
+      set_curbuf(buf, DOBUF_GOTO, !(jop_flags & JOP_UNLOAD));
       if (!bufref_valid(&bufref)) {
         // Autocommands deleted the buffer.
         swap_exists_action = SEA_NONE;
@@ -4204,7 +4228,7 @@ int buf_open_scratch(handle_T bufnr, char *bufname)
 
 bool buf_is_empty(buf_T *buf)
 {
-  return buf->b_ml.ml_line_count == 1 && *ml_get_buf(buf, 1) == '\0';
+  return buf->b_ml.ml_line_count == 1 && *ml_get_buf(buf, 1) == NUL;
 }
 
 /// Increment b:changedtick value

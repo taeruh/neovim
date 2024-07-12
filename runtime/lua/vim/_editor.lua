@@ -74,7 +74,6 @@ vim.log = {
 --- Examples:
 ---
 --- ```lua
----
 --- local on_exit = function(obj)
 ---   print(obj.code)
 ---   print(obj.signal)
@@ -122,15 +121,16 @@ vim.log = {
 ---   asynchronously. Receives SystemCompleted object, see return of SystemObj:wait().
 ---
 --- @return vim.SystemObj Object with the fields:
+---   - cmd (string[]) Command name and args
 ---   - pid (integer) Process ID
 ---   - wait (fun(timeout: integer|nil): SystemCompleted) Wait for the process to complete. Upon
 ---     timeout the process is sent the KILL signal (9) and the exit code is set to 124. Cannot
 ---     be called in |api-fast|.
 ---     - SystemCompleted is an object with the fields:
----      - code: (integer)
----      - signal: (integer)
----      - stdout: (string), nil if stdout argument is passed
----      - stderr: (string), nil if stderr argument is passed
+---       - code: (integer)
+---       - signal: (integer)
+---       - stdout: (string), nil if stdout argument is passed
+---       - stderr: (string), nil if stderr argument is passed
 ---   - kill (fun(signal: integer|string))
 ---   - write (fun(data: string|nil)) Requires `stdin=true`. Pass `nil` to close the stream.
 ---   - is_closing (fun(): boolean)
@@ -190,6 +190,7 @@ function vim._os_proc_children(ppid)
   return children
 end
 
+--- @nodoc
 --- @class vim.inspect.Opts
 --- @field depth? integer
 --- @field newline? string
@@ -274,6 +275,7 @@ do
       for _, line in ipairs(lines) do
         nchars = nchars + line:len()
       end
+      --- @type integer, integer
       local row, col = unpack(vim.api.nvim_win_get_cursor(0))
       local bufline = vim.api.nvim_buf_get_lines(0, row - 1, row, true)[1]
       local firstline = lines[1]
@@ -354,8 +356,11 @@ end
 -- vim.fn.{func}(...)
 ---@nodoc
 vim.fn = setmetatable({}, {
+  --- @param t table<string,function>
+  --- @param key string
+  --- @return function
   __index = function(t, key)
-    local _fn
+    local _fn --- @type function
     if vim.api[key] ~= nil then
       _fn = function()
         error(string.format('Tried to call API function with vim.fn: use vim.api.%s instead', key))
@@ -454,7 +459,7 @@ vim.cmd = setmetatable({}, {
   end,
 })
 
---- @class vim.var_accessor
+--- @class (private) vim.var_accessor
 --- @field [string] any
 --- @field [integer] vim.var_accessor
 
@@ -489,6 +494,7 @@ do
   vim.t = make_dict_accessor('t')
 end
 
+--- @deprecated
 --- Gets a dict of line segment ("chunk") positions for the region from `pos1` to `pos2`.
 ---
 --- Input and output positions are byte positions, (0,0)-indexed. "End of line" column
@@ -497,11 +503,13 @@ end
 ---@param bufnr integer Buffer number, or 0 for current buffer
 ---@param pos1 integer[]|string Start of region as a (line, column) tuple or |getpos()|-compatible string
 ---@param pos2 integer[]|string End of region as a (line, column) tuple or |getpos()|-compatible string
----@param regtype string \|setreg()|-style selection type
+---@param regtype string [setreg()]-style selection type
 ---@param inclusive boolean Controls whether the ending column is inclusive (see also 'selection').
 ---@return table region Dict of the form `{linenr = {startcol,endcol}}`. `endcol` is exclusive, and
 ---whole lines are returned as `{startcol,endcol} = {0,-1}`.
 function vim.region(bufnr, pos1, pos2, regtype, inclusive)
+  vim.deprecate('vim.region', 'vim.fn.getregionpos()', '0.13')
+
   if not vim.api.nvim_buf_is_loaded(bufnr) then
     vim.fn.bufload(bufnr)
   end
@@ -600,10 +608,9 @@ end
 
 --- Displays a notification to the user.
 ---
---- This function can be overridden by plugins to display notifications using a
---- custom provider (such as the system notification provider). By default,
+--- This function can be overridden by plugins to display notifications using
+--- a custom provider (such as the system notification provider). By default,
 --- writes to |:messages|.
----
 ---@param msg string Content of the notification to show to the user.
 ---@param level integer|nil One of the values from |vim.log.levels|.
 ---@param opts table|nil Optional parameters. Unused by default.
@@ -619,7 +626,7 @@ function vim.notify(msg, level, opts) -- luacheck: no unused args
 end
 
 do
-  local notified = {}
+  local notified = {} --- @type table<string,true>
 
   --- Displays a notification only one time.
   ---
@@ -640,7 +647,7 @@ do
   end
 end
 
-local on_key_cbs = {}
+local on_key_cbs = {} --- @type table<integer,function>
 
 --- Adds Lua function {fn} with namespace id {ns_id} as a listener to every,
 --- yes every, input key.
@@ -650,11 +657,14 @@ local on_key_cbs = {}
 ---
 ---@note {fn} will be removed on error.
 ---@note {fn} will not be cleared by |nvim_buf_clear_namespace()|
----@note {fn} will receive the keys after mappings have been evaluated
 ---
----@param fn fun(key: string)? Function invoked on every key press. |i_CTRL-V|
----                   Passing in nil when {ns_id} is specified removes the
----                   callback associated with namespace {ns_id}.
+---@param fn fun(key: string, typed: string)?
+---                   Function invoked on every key press. |i_CTRL-V|
+---                   {key} is the key after mappings have been applied, and
+---                   {typed} is the key(s) before mappings are applied, which
+---                   may be empty if {key} is produced by non-typed keys.
+---                   When {fn} is nil and {ns_id} is specified, the callback
+---                   associated with namespace {ns_id} is removed.
 ---@param ns_id integer? Namespace ID. If nil or 0, generates and returns a
 ---                     new |nvim_create_namespace()| id.
 ---
@@ -680,11 +690,11 @@ end
 
 --- Executes the on_key callbacks.
 ---@private
-function vim._on_key(char)
+function vim._on_key(buf, typed_buf)
   local failed_ns_ids = {}
   local failed_messages = {}
   for k, v in pairs(on_key_cbs) do
-    local ok, err_msg = pcall(v, char)
+    local ok, err_msg = pcall(v, buf, typed_buf)
     if not ok then
       vim.on_key(nil, k)
       table.insert(failed_ns_ids, k)
@@ -706,10 +716,11 @@ end
 --- Generates a list of possible completions for the string.
 --- String has the pattern.
 ---
----     1. Can we get it to just return things in the global namespace with that name prefix
----     2. Can we get it to return things from global namespace even with `print(` in front.
+--- 1. Can we get it to just return things in the global namespace with that name prefix
+--- 2. Can we get it to return things from global namespace even with `print(` in front.
 ---
 --- @param pat string
+--- @return any[], integer
 function vim._expand_pat(pat, env)
   env = env or _G
 
@@ -742,7 +753,7 @@ function vim._expand_pat(pat, env)
     if type(final_env) ~= 'table' then
       return {}, 0
     end
-    local key
+    local key --- @type any
 
     -- Normally, we just have a string
     -- Just attempt to get the string directly from the environment
@@ -784,7 +795,8 @@ function vim._expand_pat(pat, env)
     end
   end
 
-  local keys = {}
+  local keys = {} --- @type table<string,true>
+  --- @param obj table<any,any>
   local function insert_keys(obj)
     for k, _ in pairs(obj) do
       if type(k) == 'string' and string.sub(k, 1, string.len(match_part)) == match_part then
@@ -812,6 +824,7 @@ function vim._expand_pat(pat, env)
 end
 
 --- @param lua_string string
+--- @return (string|string[])[], integer
 vim._expand_pat_get_parts = function(lua_string)
   local parts = {}
 
@@ -869,6 +882,7 @@ vim._expand_pat_get_parts = function(lua_string)
     end
   end
 
+  --- @param val any[]
   parts = vim.tbl_filter(function(val)
     return #val > 0
   end, parts)
@@ -879,12 +893,13 @@ end
 do
   -- Ideally we should just call complete() inside omnifunc, though there are
   -- some bugs, so fake the two-step dance for now.
-  local matches
+  local matches --- @type any[]
 
   --- Omnifunc for completing Lua values from the runtime Lua interpreter,
   --- similar to the builtin completion for the `:lua` command.
   ---
   --- Activate using `set omnifunc=v:lua.vim.lua_omnifunc` in a Lua buffer.
+  --- @param find_start 1|0
   function vim.lua_omnifunc(find_start, _)
     if find_start == 1 then
       local line = vim.api.nvim_get_current_line()
@@ -898,12 +913,6 @@ do
   end
 end
 
----@private
-function vim.pretty_print(...)
-  vim.deprecate('vim.pretty_print()', 'vim.print()', '0.10')
-  return vim.print(...)
-end
-
 --- "Pretty prints" the given arguments and returns them unmodified.
 ---
 --- Example:
@@ -914,6 +923,7 @@ end
 ---
 --- @see |vim.inspect()|
 --- @see |:=|
+--- @param ... any
 --- @return any # given arguments.
 function vim.print(...)
   if vim.in_fast_event() then
@@ -1023,6 +1033,42 @@ function vim._cs_remote(rcid, server_addr, connect_error, args)
   }
 end
 
+do
+  local function truncated_echo(msg)
+    -- Truncate message to avoid hit-enter-prompt
+    local max_width = vim.o.columns * math.max(vim.o.cmdheight - 1, 0) + vim.v.echospace
+    local msg_truncated = string.sub(msg, 1, max_width)
+    vim.api.nvim_echo({ { msg_truncated, 'WarningMsg' } }, true, {})
+  end
+
+  local notified = false
+
+  function vim._truncated_echo_once(msg)
+    if not notified then
+      truncated_echo(msg)
+      notified = true
+      return true
+    end
+    return false
+  end
+end
+
+--- This is basically the same as debug.traceback(), except the full paths are shown.
+local function traceback()
+  local level = 4
+  local backtrace = { 'stack traceback:' }
+  while true do
+    local info = debug.getinfo(level, 'Sl')
+    if not info then
+      break
+    end
+    local msg = ('  %s:%s'):format(info.source:sub(2), info.currentline)
+    table.insert(backtrace, msg)
+    level = level + 1
+  end
+  return table.concat(backtrace, '\n')
+end
+
 --- Shows a deprecation message to the user.
 ---
 ---@param name        string     Deprecated feature (function, API, etc.).
@@ -1034,55 +1080,46 @@ end
 ---
 ---@return string|nil # Deprecated message, or nil if no message was shown.
 function vim.deprecate(name, alternative, version, plugin, backtrace)
-  vim.validate {
-    name = { name, 'string' },
-    alternative = { alternative, 'string', true },
-    version = { version, 'string', true },
-    plugin = { plugin, 'string', true },
-  }
   plugin = plugin or 'Nvim'
-
-  -- Only issue warning if feature is hard-deprecated as specified by MAINTAIN.md.
-  -- e.g., when planned to be removed in version = '0.12' (soft-deprecated since 0.10-dev),
-  -- show warnings since 0.11, including 0.11-dev (hard_deprecated_since = 0.11-dev).
   if plugin == 'Nvim' then
-    local current_version = vim.version() ---@type Version
-    local removal_version = assert(vim.version.parse(version))
-    local is_hard_deprecated ---@type boolean
+    require('vim.deprecated.health').add(name, version, traceback(), alternative)
 
-    if removal_version.minor > 0 then
-      local hard_deprecated_since = assert(vim.version._version({
-        major = removal_version.major,
-        minor = removal_version.minor - 1,
-        patch = 0,
-        prerelease = 'dev', -- Show deprecation warnings in devel (nightly) version as well
-      }))
-      is_hard_deprecated = (current_version >= hard_deprecated_since)
-    else
-      -- Assume there will be no next minor version before bumping up the major version;
-      -- therefore we can always show a warning.
-      assert(removal_version.minor == 0, vim.inspect(removal_version))
-      is_hard_deprecated = true
-    end
+    -- Only issue warning if feature is hard-deprecated as specified by MAINTAIN.md.
+    -- Example: if removal_version is 0.12 (soft-deprecated since 0.10-dev), show warnings starting at
+    -- 0.11, including 0.11-dev
+    local major, minor = version:match('(%d+)%.(%d+)')
+    major, minor = tonumber(major), tonumber(minor)
 
+    local hard_deprecated_since = string.format('nvim-%d.%d', major, minor - 1)
+    -- Assume there will be no next minor version before bumping up the major version
+    local is_hard_deprecated = minor == 0 or vim.fn.has(hard_deprecated_since) == 1
     if not is_hard_deprecated then
       return
     end
-  end
 
-  local msg = ('%s is deprecated'):format(name)
-  msg = alternative and ('%s, use %s instead.'):format(msg, alternative) or (msg .. '.')
-  msg = ('%s%s\nThis feature will be removed in %s version %s'):format(
-    msg,
-    (plugin == 'Nvim' and ' :help deprecated' or ''),
-    plugin,
-    version
-  )
-  local displayed = vim.notify_once(msg, vim.log.levels.WARN)
-  if displayed and backtrace ~= false then
-    vim.notify(debug.traceback('', 2):sub(2), vim.log.levels.WARN)
+    local msg = ('%s is deprecated. Run ":checkhealth vim.deprecated" for more information'):format(
+      name
+    )
+
+    local displayed = vim._truncated_echo_once(msg)
+    return displayed and msg or nil
+  else
+    vim.validate {
+      name = { name, 'string' },
+      alternative = { alternative, 'string', true },
+      version = { version, 'string', true },
+      plugin = { plugin, 'string', true },
+    }
+
+    local msg = ('%s is deprecated'):format(name)
+    msg = alternative and ('%s, use %s instead.'):format(msg, alternative) or (msg .. '.')
+    msg = ('%s\nFeature will be removed in %s %s'):format(msg, plugin, version)
+    local displayed = vim.notify_once(msg, vim.log.levels.WARN)
+    if displayed and backtrace ~= false then
+      vim.notify(debug.traceback('', 2):sub(2), vim.log.levels.WARN)
+    end
+    return displayed and msg or nil
   end
-  return displayed and msg or nil
 end
 
 require('vim._options')

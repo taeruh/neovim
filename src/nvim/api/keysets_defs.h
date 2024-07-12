@@ -55,8 +55,7 @@ typedef struct {
   Boolean ui_watched;
   Boolean undo_restore;
   String url;
-
-  Integer _subpriority;
+  Boolean scoped;
 } Dict(set_extmark);
 
 typedef struct {
@@ -374,3 +373,22 @@ typedef struct {
   Boolean ignore_blank_lines;
   Boolean indent_heuristic;
 } Dict(xdl_diff);
+
+typedef struct {
+  OptionalKeys is_set__redraw_;
+  Boolean flush;
+  Boolean cursor;
+  Boolean valid;
+  Boolean statuscolumn;
+  Boolean statusline;
+  Boolean tabline;
+  Boolean winbar;
+  Array range;
+  Window win;
+  Buffer buf;
+} Dict(redraw);
+
+typedef struct {
+  OptionalKeys is_set__ns_opts_;
+  Array wins;
+} Dict(ns_opts);

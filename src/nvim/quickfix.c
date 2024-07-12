@@ -20,6 +20,7 @@
 #include "nvim/cursor.h"
 #include "nvim/drawscreen.h"
 #include "nvim/edit.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/window.h"
@@ -723,7 +724,7 @@ static int qf_get_next_str_line(qfstate_T *state)
     state->linelen = len;
   }
   memcpy(state->linebuf, p_str, state->linelen);
-  state->linebuf[state->linelen] = '\0';
+  state->linebuf[state->linelen] = NUL;
 
   // Increment using len in order to discard the rest of the line if it
   // exceeds LINE_MAXLEN.
@@ -773,9 +774,9 @@ static int qf_get_next_buf_line(qfstate_T *state)
     return QF_END_OF_INPUT;
   }
   char *p_buf = ml_get_buf(state->buf, state->buflnum);
+  size_t len = (size_t)ml_get_buf_len(state->buf, state->buflnum);
   state->buflnum += 1;
 
-  size_t len = strlen(p_buf);
   if (len > IOSIZE - 2) {
     state->linebuf = qf_grow_linebuf(state, len);
   } else {
@@ -2699,7 +2700,8 @@ static void qf_goto_win_with_qfl_file(int qf_fnum)
       // Didn't find it, go to the window before the quickfix
       // window, unless 'switchbuf' contains 'uselast': in this case we
       // try to jump to the previously used window first.
-      if ((swb_flags & SWB_USELAST) && win_valid(prevwin)) {
+      if ((swb_flags & SWB_USELAST) && win_valid(prevwin)
+          && !prevwin->w_p_wfb) {
         win = prevwin;
       } else if (altwin != NULL) {
         win = altwin;
@@ -2714,6 +2716,7 @@ static void qf_goto_win_with_qfl_file(int qf_fnum)
     // Remember a usable window.
     if (altwin == NULL
         && !win->w_p_pvw
+        && !win->w_p_wfb
         && bt_normal(win->w_buffer)) {
       altwin = win;
     }
@@ -2802,8 +2805,43 @@ static int qf_jump_edit_buffer(qf_info_T *qi, qfline_T *qf_ptr, int forceit, int
                      ECMD_HIDE + ECMD_SET_HELP,
                      prev_winid == curwin->handle ? curwin : NULL);
   } else {
-    retval = buflist_getfile(qf_ptr->qf_fnum, 1,
-                             GETF_SETMARK | GETF_SWITCH, forceit);
+    int fnum = qf_ptr->qf_fnum;
+
+    if (!forceit && curwin->w_p_wfb && curbuf->b_fnum != fnum) {
+      if (qi->qfl_type == QFLT_LOCATION) {
+        // Location lists cannot split or reassign their window
+        // so 'winfixbuf' windows must fail
+        emsg(_(e_winfixbuf_cannot_go_to_buffer));
+        return FAIL;
+      }
+
+      if (win_valid(prevwin) && !prevwin->w_p_wfb
+          && !bt_quickfix(prevwin->w_buffer)) {
+        // 'winfixbuf' is set; attempt to change to a window without it
+        // that isn't a quickfix/location list window.
+        win_goto(prevwin);
+      }
+      if (curwin->w_p_wfb) {
+        // Split the window, which will be 'nowinfixbuf', and set curwin
+        // to that
+        if (win_split(0, 0) == OK) {
+          *opened_window = true;
+        }
+        if (curwin->w_p_wfb) {
+          // Autocommands set 'winfixbuf' or sent us to another window
+          // with it set, or we failed to split the window.  Give up,
+          // but don't return immediately, as they may have messed
+          // with the list.
+          emsg(_(e_winfixbuf_cannot_go_to_buffer));
+          retval = FAIL;
+        }
+      }
+    }
+
+    if (retval == OK) {
+      retval = buflist_getfile(fnum, 1,
+                               GETF_SETMARK | GETF_SWITCH, forceit);
+    }
   }
   // If a location list, check whether the associated window is still
   // present.
@@ -2852,12 +2890,12 @@ static void qf_jump_goto_line(linenr_T qf_lnum, int qf_col, char qf_viscol, char
     if (qf_col > 0) {
       curwin->w_cursor.coladd = 0;
       if (qf_viscol == true) {
-        coladvance(qf_col - 1);
+        coladvance(curwin, qf_col - 1);
       } else {
         curwin->w_cursor.col = qf_col - 1;
       }
       curwin->w_set_curswant = true;
-      check_cursor();
+      check_cursor(curwin);
     } else {
       beginline(BL_WHITE | BL_FIX);
     }
@@ -2865,7 +2903,7 @@ static void qf_jump_goto_line(linenr_T qf_lnum, int qf_col, char qf_viscol, char
     // Move the cursor to the first line in the buffer
     pos_T save_cursor = curwin->w_cursor;
     curwin->w_cursor.lnum = 0;
-    if (!do_search(NULL, '/', '/', qf_pattern, 1, SEARCH_KEEP, NULL)) {
+    if (!do_search(NULL, '/', '/', qf_pattern, strlen(qf_pattern), 1, SEARCH_KEEP, NULL)) {
       curwin->w_cursor = save_cursor;
     }
   }
@@ -2877,8 +2915,7 @@ static void qf_jump_print_msg(qf_info_T *qi, int qf_index, qfline_T *qf_ptr, buf
 {
   garray_T *const gap = qfga_get();
 
-  // Update the screen before showing the message, unless the screen
-  // scrolled up.
+  // Update the screen before showing the message, unless messages scrolled.
   if (!msg_scrolled) {
     update_topline(curwin);
     if (must_redraw) {
@@ -2900,7 +2937,8 @@ static void qf_jump_print_msg(qf_info_T *qi, int qf_index, qfline_T *qf_ptr, buf
   linenr_T i = msg_scroll;
   if (curbuf == old_curbuf && curwin->w_cursor.lnum == old_lnum) {
     msg_scroll = true;
-  } else if (!msg_scrolled && shortmess(SHM_OVERALL)) {
+  } else if ((msg_scrolled == 0 || (p_ch == 0 && msg_scrolled == 1))
+             && shortmess(SHM_OVERALL)) {
     msg_scroll = false;
   }
   msg_ext_set_kind("quickfix");
@@ -3794,7 +3832,7 @@ void ex_copen(exarg_T *eap)
 
   curwin->w_cursor.lnum = lnum;
   curwin->w_cursor.col = 0;
-  check_cursor();
+  check_cursor(curwin);
   update_topline(curwin);             // scroll to show the line
 }
 
@@ -4158,6 +4196,12 @@ static void qf_fill_buffer(qf_list_T *qfl, buf_T *buf, qfline_T *old_last, int q
       }
     }
 
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+      if (wp->w_buffer == curbuf) {
+        wp->w_skipcol = 0;
+      }
+    }
+
     // Remove all undo information
     u_clearallandblockfree(curbuf);
   }
@@ -4237,10 +4281,10 @@ static void qf_fill_buffer(qf_list_T *qfl, buf_T *buf, qfline_T *old_last, int q
     set_option_value_give_err(kOptFiletype, STATIC_CSTR_AS_OPTVAL("qf"), OPT_LOCAL);
     curbuf->b_p_ma = false;
 
-    keep_filetype = true;                 // don't detect 'filetype'
+    curbuf->b_keep_filetype = true;  // don't detect 'filetype'
     apply_autocmds(EVENT_BUFREADPOST, "quickfix", NULL, false, curbuf);
     apply_autocmds(EVENT_BUFWINENTER, "quickfix", NULL, false, curbuf);
-    keep_filetype = false;
+    curbuf->b_keep_filetype = false;
     curbuf->b_ro_locked--;
 
     // make sure it will be redrawn
@@ -4297,6 +4341,11 @@ static void qf_jump_first(qf_info_T *qi, unsigned save_qfid, int forceit)
   if (qf_restore_list(qi, save_qfid) == FAIL) {
     return;
   }
+
+  if (!check_can_set_curbuf_forceit(forceit)) {
+    return;
+  }
+
   // Autocommands might have cleared the list, check for that
   if (!qf_list_empty(qf_get_curlist(qi))) {
     qf_jump(qi, 0, 0, forceit);
@@ -4482,7 +4531,7 @@ static char *get_mef_name(void)
     name = xmalloc(strlen(p_mef) + 30);
     STRCPY(name, p_mef);
     snprintf(name + (p - p_mef), strlen(name), "%d%d", start, off);
-    STRCAT(name, p + 2);
+    strcat(name, p + 2);
     // Don't accept a symbolic link, it's a security risk.
     FileInfo file_info;
     bool file_or_link_found = os_fileinfo_link(name, &file_info);
@@ -5112,7 +5161,7 @@ void ex_cfile(exarg_T *eap)
     }
   }
   if (*eap->arg != NUL) {
-    set_string_option_direct(kOptErrorfile, eap->arg, 0, 0);
+    set_option_direct(kOptErrorfile, CSTR_AS_OPTVAL(eap->arg), 0, 0);
   }
 
   char *enc = (*curbuf->b_p_menc != NUL) ? curbuf->b_p_menc : p_menc;
@@ -5125,7 +5174,7 @@ void ex_cfile(exarg_T *eap)
 
   // This function is used by the :cfile, :cgetfile and :caddfile
   // commands.
-  // :cfile always creates a new quickfix list and jumps to the
+  // :cfile always creates a new quickfix list and may jump to the
   // first error.
   // :cgetfile creates a new quickfix list but doesn't jump to the
   // first error.
@@ -5314,12 +5363,13 @@ static bool vgr_match_buflines(qf_list_T *qfl, char *fname, buf_T *buf, char *sp
           break;
         }
         col = regmatch->endpos[0].col + (col == regmatch->endpos[0].col);
-        if (col > (colnr_T)strlen(ml_get_buf(buf, lnum))) {
+        if (col > ml_get_buf_len(buf, lnum)) {
           break;
         }
       }
     } else {
       char *const str = ml_get_buf(buf, lnum);
+      const colnr_T linelen = ml_get_buf_len(buf, lnum);
       int score;
       uint32_t matches[MAX_FUZZY_MATCHES];
       const size_t sz = sizeof(matches) / sizeof(matches[0]);
@@ -5358,7 +5408,7 @@ static bool vgr_match_buflines(qf_list_T *qfl, char *fname, buf_T *buf, char *sp
           break;
         }
         col = (colnr_T)matches[pat_len - 1] + col + 1;
-        if (col > (colnr_T)strlen(str)) {
+        if (col > linelen) {
           break;
         }
       }
@@ -5587,6 +5637,10 @@ theend:
 /// ":lvimgrepadd {pattern} file(s)"
 void ex_vimgrep(exarg_T *eap)
 {
+  if (!check_can_set_curbuf_forceit(eap->forceit)) {
+    return;
+  }
+
   char *au_name = vgr_get_auname(eap->cmdidx);
   if (au_name != NULL && apply_autocmds(EVENT_QUICKFIXCMDPRE, au_name,
                                         curbuf->b_fname, true, curbuf)) {
@@ -7183,7 +7237,7 @@ static void hgr_search_files_in_dir(qf_list_T *qfl, char *dirname, regmatch_T *p
 
   // Find all "*.txt" and "*.??x" files in the "doc" directory.
   add_pathsep(dirname);
-  STRCAT(dirname, "doc/*.\\(txt\\|??x\\)");  // NOLINT
+  strcat(dirname, "doc/*.\\(txt\\|??x\\)");  // NOLINT
   if (gen_expand_wildcards(1, &dirname, &fcount, &fnames, EW_FILE|EW_SILENT) == OK
       && fcount > 0) {
     for (int fi = 0; fi < fcount && !got_int; fi++) {

@@ -31,6 +31,10 @@ local function write_signature(output, ev, prefix, notype)
 end
 
 local function write_arglist(output, ev)
+  if #ev.parameters == 0 then
+    return
+  end
+  output:write('  MAXSIZE_TEMP_ARRAY(args, ' .. #ev.parameters .. ');\n')
   for j = 1, #ev.parameters do
     local param = ev.parameters[j]
     local kind = string.upper(param[1])
@@ -93,6 +97,10 @@ local function call_ui_event_method(output, ev)
   output:write('}\n\n')
 end
 
+events = vim.tbl_filter(function(ev)
+  return ev[1] ~= 'empty'
+end, events)
+
 for i = 1, #events do
   local ev = events[i]
   assert(ev.return_type == 'void')
@@ -103,15 +111,14 @@ for i = 1, #events do
   end
   ev.since = tonumber(ev.since)
 
+  local args = #ev.parameters > 0 and 'args' or 'noargs'
   if not ev.remote_only then
     if not ev.remote_impl and not ev.noexport then
       remote_output:write('void remote_ui_' .. ev.name)
-      write_signature(remote_output, ev, 'UI *ui')
+      write_signature(remote_output, ev, 'RemoteUI *ui')
       remote_output:write('\n{\n')
-      remote_output:write('  UIData *data = ui->data;\n')
-      remote_output:write('  Array args = data->call_buf;\n')
       write_arglist(remote_output, ev)
-      remote_output:write('  push_call(ui, "' .. ev.name .. '", args);\n')
+      remote_output:write('  push_call(ui, "' .. ev.name .. '", ' .. args .. ');\n')
       remote_output:write('}\n\n')
     end
   end
@@ -121,9 +128,16 @@ for i = 1, #events do
     write_signature(call_output, ev, '')
     call_output:write('\n{\n')
     if ev.remote_only then
-      call_output:write('  Array args = call_buf;\n')
+      -- Lua callbacks may emit other events or the same event again. Avoid the latter
+      -- by adding a recursion guard to each generated function that may call a Lua callback.
+      call_output:write('  static bool entered = false;\n')
+      call_output:write('  if (entered) {\n')
+      call_output:write('    return;\n')
+      call_output:write('  }\n')
+      call_output:write('  entered = true;\n')
       write_arglist(call_output, ev)
-      call_output:write('  ui_call_event("' .. ev.name .. '", args);\n')
+      call_output:write('  ui_call_event("' .. ev.name .. '", ' .. args .. ');\n')
+      call_output:write('  entered = false;\n')
     elseif ev.compositor_impl then
       call_output:write('  ui_comp_' .. ev.name)
       write_signature(call_output, ev, '', true)
@@ -200,7 +214,5 @@ for _, ev in ipairs(events) do
   end
 end
 
-local packed = mpack.encode(exported_events)
-local dump_bin_array = require('generators.dump_bin_array')
-dump_bin_array(metadata_output, 'ui_events_metadata', packed)
+metadata_output:write(mpack.encode(exported_events))
 metadata_output:close()

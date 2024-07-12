@@ -13,6 +13,7 @@
 #include "nvim/autocmd_defs.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/channel.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/encode.h"
 #include "nvim/eval/typval.h"
@@ -29,6 +30,7 @@
 #include "nvim/log.h"
 #include "nvim/lua/executor.h"
 #include "nvim/main.h"
+#include "nvim/mbyte.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/msgpack_rpc/channel.h"
@@ -37,8 +39,6 @@
 #include "nvim/os/os_defs.h"
 #include "nvim/os/shell.h"
 #include "nvim/path.h"
-#include "nvim/rbuffer.h"
-#include "nvim/rbuffer_defs.h"
 #include "nvim/terminal.h"
 #include "nvim/types_defs.h"
 
@@ -125,19 +125,19 @@ bool channel_close(uint64_t id, ChannelPart part, const char **error)
       *error = e_invstream;
       return false;
     }
-    stream_may_close(&chan->stream.socket);
+    rstream_may_close(&chan->stream.socket);
     break;
 
   case kChannelStreamProc:
     proc = &chan->stream.proc;
     if (part == kChannelPartStdin || close_main) {
-      stream_may_close(&proc->in);
+      wstream_may_close(&proc->in);
     }
     if (part == kChannelPartStdout || close_main) {
-      stream_may_close(&proc->out);
+      rstream_may_close(&proc->out);
     }
     if (part == kChannelPartStderr || part == kChannelPartAll) {
-      stream_may_close(&proc->err);
+      rstream_may_close(&proc->err);
     }
     if (proc->type == kProcessTypePty && part == kChannelPartAll) {
       pty_process_close_master(&chan->stream.pty);
@@ -147,10 +147,10 @@ bool channel_close(uint64_t id, ChannelPart part, const char **error)
 
   case kChannelStreamStdio:
     if (part == kChannelPartStdin || close_main) {
-      stream_may_close(&chan->stream.stdio.in);
+      rstream_may_close(&chan->stream.stdio.in);
     }
     if (part == kChannelPartStdout || close_main) {
-      stream_may_close(&chan->stream.stdio.out);
+      wstream_may_close(&chan->stream.stdio.out);
     }
     if (part == kChannelPartStderr) {
       *error = e_invstream;
@@ -430,7 +430,7 @@ Channel *channel_job_start(char **argv, const char *exepath, CallbackReader on_s
     wstream_init(&proc->in, 0);
   }
   if (has_out) {
-    rstream_init(&proc->out, 0);
+    rstream_init(&proc->out);
   }
 
   if (rpc) {
@@ -445,7 +445,7 @@ Channel *channel_job_start(char **argv, const char *exepath, CallbackReader on_s
 
   if (has_err) {
     callback_reader_start(&chan->on_stderr, "stderr");
-    rstream_init(&proc->err, 0);
+    rstream_init(&proc->err);
     rstream_start(&proc->err, on_job_stderr, chan);
   }
 
@@ -479,10 +479,10 @@ uint64_t channel_connect(bool tcp, const char *address, bool rpc, CallbackReader
     return 0;
   }
 
-  channel->stream.socket.internal_close_cb = close_cb;
-  channel->stream.socket.internal_data = channel;
-  wstream_init(&channel->stream.socket, 0);
-  rstream_init(&channel->stream.socket, 0);
+  channel->stream.socket.s.internal_close_cb = close_cb;
+  channel->stream.socket.s.internal_data = channel;
+  wstream_init(&channel->stream.socket.s, 0);
+  rstream_init(&channel->stream.socket);
 
   if (rpc) {
     rpc_start(channel);
@@ -504,10 +504,10 @@ void channel_from_connection(SocketWatcher *watcher)
 {
   Channel *channel = channel_alloc(kChannelStreamSocket);
   socket_watcher_accept(watcher, &channel->stream.socket);
-  channel->stream.socket.internal_close_cb = close_cb;
-  channel->stream.socket.internal_data = channel;
-  wstream_init(&channel->stream.socket, 0);
-  rstream_init(&channel->stream.socket, 0);
+  channel->stream.socket.s.internal_close_cb = close_cb;
+  channel->stream.socket.s.internal_data = channel;
+  wstream_init(&channel->stream.socket.s, 0);
+  rstream_init(&channel->stream.socket);
   rpc_start(channel);
   channel_create_event(channel, watcher->addr);
 }
@@ -543,13 +543,16 @@ uint64_t channel_from_stdio(bool rpc, CallbackReader on_output, const char **err
   }
 #else
   if (embedded_mode) {
-    stdin_dup_fd = dup(STDIN_FILENO);
-    stdout_dup_fd = dup(STDOUT_FILENO);
+    // Redirect stdout/stdin (the UI channel) to stderr. Use fnctl(F_DUPFD_CLOEXEC) instead of dup()
+    // to prevent child processes from inheriting the file descriptors, which are used by UIs to
+    // detect when Nvim exits.
+    stdin_dup_fd = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+    stdout_dup_fd = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
     dup2(STDERR_FILENO, STDOUT_FILENO);
     dup2(STDERR_FILENO, STDIN_FILENO);
   }
 #endif
-  rstream_init_fd(&main_loop, &channel->stream.stdio.in, stdin_dup_fd, 0);
+  rstream_init_fd(&main_loop, &channel->stream.stdio.in, stdin_dup_fd);
   wstream_init_fd(&main_loop, &channel->stream.stdio.out, stdout_dup_fd, 0);
 
   if (rpc) {
@@ -643,43 +646,50 @@ static inline list_T *buffer_to_tv_list(const char *const buf, const size_t len)
   return l;
 }
 
-void on_channel_data(Stream *stream, RBuffer *buf, size_t count, void *data, bool eof)
+size_t on_channel_data(RStream *stream, const char *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
-  on_channel_output(stream, chan, buf, count, eof, &chan->on_data);
+  return on_channel_output(stream, chan, buf, count, eof, &chan->on_data);
 }
 
-void on_job_stderr(Stream *stream, RBuffer *buf, size_t count, void *data, bool eof)
+size_t on_job_stderr(RStream *stream, const char *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
-  on_channel_output(stream, chan, buf, count, eof, &chan->on_stderr);
+  return on_channel_output(stream, chan, buf, count, eof, &chan->on_stderr);
 }
 
-static void on_channel_output(Stream *stream, Channel *chan, RBuffer *buf, size_t count, bool eof,
-                              CallbackReader *reader)
+static size_t on_channel_output(RStream *stream, Channel *chan, const char *buf, size_t count,
+                                bool eof, CallbackReader *reader)
 {
-  // stub variable, to keep reading consistent with the order of events, only
-  // consider the count parameter.
-  size_t r;
-  char *ptr = rbuffer_read_ptr(buf, &r);
+  if (chan->term) {
+    if (count) {
+      const char *p = buf;
+      const char *end = buf + count;
+      while (p < end) {
+        // Don't pass incomplete UTF-8 sequences to libvterm. #16245
+        // Composing chars can be passed separately, so utf_ptr2len_len() is enough.
+        int clen = utf_ptr2len_len(p, (int)(end - p));
+        if (clen > end - p) {
+          count = (size_t)(p - buf);
+          break;
+        }
+        p += clen;
+      }
+    }
+
+    terminal_receive(chan->term, buf, count);
+  }
 
   if (eof) {
     reader->eof = true;
-  } else {
-    if (chan->term) {
-      terminal_receive(chan->term, ptr, count);
-    }
-
-    rbuffer_consumed(buf, count);
-
-    if (callback_reader_set(*reader)) {
-      ga_concat_len(&reader->buffer, ptr, count);
-    }
   }
 
   if (callback_reader_set(*reader)) {
+    ga_concat_len(&reader->buffer, buf, count);
     schedule_channel_event(chan);
   }
+
+  return count;
 }
 
 /// schedule the necessary callbacks to be invoked as a deferred event
@@ -843,7 +853,7 @@ static void term_resize(uint16_t width, uint16_t height, void *data)
 static inline void term_delayed_free(void **argv)
 {
   Channel *chan = argv[0];
-  if (chan->stream.proc.in.pending_reqs || chan->stream.proc.out.pending_reqs) {
+  if (chan->stream.proc.in.pending_reqs || chan->stream.proc.out.s.pending_reqs) {
     multiqueue_put(chan->events, term_delayed_free, chan);
     return;
   }

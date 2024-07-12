@@ -911,33 +911,33 @@ function vim.fn.cindent(lnum) end
 function vim.fn.clearmatches(win) end
 
 --- The result is a Number, which is the byte index of the column
---- position given with {expr}.  The accepted positions are:
----     .      the cursor position
----     $      the end of the cursor line (the result is the
----       number of bytes in the cursor line plus one)
----     'x      position of mark x (if the mark is not set, 0 is
----       returned)
----     v       In Visual mode: the start of the Visual area (the
----       cursor is the end).  When not in Visual mode
----       returns the cursor position.  Differs from |'<| in
----       that it's updated right away.
+--- position given with {expr}.
+--- For accepted positions see |getpos()|.
+--- When {expr} is "$", it means the end of the cursor line, so
+--- the result is the number of bytes in the cursor line plus one.
 --- Additionally {expr} can be [lnum, col]: a |List| with the line
 --- and column number. Most useful when the column is "$", to get
 --- the last column of a specific line.  When "lnum" or "col" is
 --- out of range then col() returns zero.
+---
 --- With the optional {winid} argument the values are obtained for
 --- that window instead of the current window.
+---
 --- To get the line number use |line()|.  To get both use
 --- |getpos()|.
+---
 --- For the screen column position use |virtcol()|.  For the
 --- character position use |charcol()|.
+---
 --- Note that only marks in the current file can be used.
+---
 --- Examples: >vim
 ---   echo col(".")      " column of cursor
 ---   echo col("$")      " length of cursor line plus one
 ---   echo col("'t")      " column of mark t
 ---   echo col("'" .. markname)  " column of mark markname
---- <The first column is 1.  Returns 0 if {expr} is invalid or when
+--- <
+--- The first column is 1.  Returns 0 if {expr} is invalid or when
 --- the window with ID {winid} is not found.
 --- For an uppercase mark the column may actually be in another
 --- buffer.
@@ -1598,11 +1598,10 @@ function vim.fn.eventhandler() end
 --- The result is a Number:
 ---   1  exists
 ---   0  does not exist
----   -1  not implemented on this system
 --- |exepath()| can be used to get the full path of an executable.
 ---
 --- @param expr any
---- @return 0|1|-1
+--- @return 0|1
 function vim.fn.executable(expr) end
 
 --- Execute {command} and capture its output.
@@ -1643,7 +1642,7 @@ function vim.fn.execute(command, silent) end
 --- If {expr} starts with "./" the |current-directory| is used.
 ---
 --- @param expr any
---- @return any
+--- @return string
 function vim.fn.exepath(expr) end
 
 --- The result is a Number, which is |TRUE| if {expr} is
@@ -1959,6 +1958,7 @@ function vim.fn.extendnew(expr1, expr2, expr3) end
 --- 't'  Handle keys as if typed; otherwise they are handled as
 ---   if coming from a mapping.  This matters for undo,
 ---   opening folds, etc.
+--- 'L'  Lowlevel input.  Other flags are not used.
 --- 'i'  Insert the string instead of appending (see above).
 --- 'x'  Execute commands until typeahead is empty.  This is
 ---   similar to using ":normal!".  You can call feedkeys()
@@ -2523,12 +2523,25 @@ function vim.fn.get(blob, idx, default) end
 --- @return any
 function vim.fn.get(dict, key, default) end
 
---- Get item {what} from Funcref {func}.  Possible values for
+--- Get item {what} from |Funcref| {func}.  Possible values for
 --- {what} are:
----   "name"  The function name
----   "func"  The function
----   "dict"  The dictionary
----   "args"  The list with arguments
+---   "name"    The function name
+---   "func"    The function
+---   "dict"    The dictionary
+---   "args"    The list with arguments
+---   "arity"   A dictionary with information about the number of
+---       arguments accepted by the function (minus the
+---       {arglist}) with the following fields:
+---     required    the number of positional arguments
+---     optional    the number of optional arguments,
+---           in addition to the required ones
+---     varargs     |TRUE| if the function accepts a
+---           variable number of arguments |...|
+---
+---     Note: There is no error, if the {arglist} of
+---     the Funcref contains more arguments than the
+---     Funcref expects, it's not validated.
+---
 --- Returns zero on error.
 ---
 --- @param func function
@@ -2703,14 +2716,14 @@ function vim.fn.getcellwidths() end
 function vim.fn.getchangelist(buf) end
 
 --- Get a single character from the user or input stream.
---- If [expr] is omitted, wait until a character is available.
---- If [expr] is 0, only get a character when one is available.
+--- If {expr} is omitted, wait until a character is available.
+--- If {expr} is 0, only get a character when one is available.
 ---   Return zero otherwise.
---- If [expr] is 1, only check if a character is available, it is
+--- If {expr} is 1, only check if a character is available, it is
 ---   not consumed.  Return zero if no character available.
 --- If you prefer always getting a string use |getcharstr()|.
 ---
---- Without [expr] and when [expr] is 0 a whole character or
+--- Without {expr} and when {expr} is 0 a whole character or
 --- special key is returned.  If it is a single character, the
 --- result is a Number.  Use |nr2char()| to convert it to a String.
 --- Otherwise a String is returned with the encoded character.
@@ -2720,11 +2733,11 @@ function vim.fn.getchangelist(buf) end
 --- also a String when a modifier (shift, control, alt) was used
 --- that is not included in the character.
 ---
---- When [expr] is 0 and Esc is typed, there will be a short delay
+--- When {expr} is 0 and Esc is typed, there will be a short delay
 --- while Vim waits to see if this is the start of an escape
 --- sequence.
 ---
---- When [expr] is 1 only the first byte is returned.  For a
+--- When {expr} is 1 only the first byte is returned.  For a
 --- one-byte character it is the character itself as a number.
 --- Use nr2char() to convert it to a String.
 ---
@@ -2766,8 +2779,9 @@ function vim.fn.getchangelist(buf) end
 ---   endfunction
 --- <
 ---
+--- @param expr? 0|1
 --- @return integer
-function vim.fn.getchar() end
+function vim.fn.getchar(expr) end
 
 --- The result is a Number which is the state of the modifiers for
 --- the last obtained character with getchar() or in another way.
@@ -2828,17 +2842,18 @@ function vim.fn.getcharsearch() end
 
 --- Get a single character from the user or input stream as a
 --- string.
---- If [expr] is omitted, wait until a character is available.
---- If [expr] is 0 or false, only get a character when one is
+--- If {expr} is omitted, wait until a character is available.
+--- If {expr} is 0 or false, only get a character when one is
 ---   available.  Return an empty string otherwise.
---- If [expr] is 1 or true, only check if a character is
+--- If {expr} is 1 or true, only check if a character is
 ---   available, it is not consumed.  Return an empty string
 ---   if no character is available.
 --- Otherwise this works like |getchar()|, except that a number
 --- result is converted to a string.
 ---
+--- @param expr? 0|1
 --- @return string
-function vim.fn.getcharstr() end
+function vim.fn.getcharstr(expr) end
 
 --- Return the type of the current command-line completion.
 --- Only works when the command line is being edited, thus
@@ -2927,6 +2942,7 @@ function vim.fn.getcmdwintype() end
 --- customlist,{func} custom completion, defined via {func}
 --- diff_buffer  |:diffget| and |:diffput| completion
 --- dir    directory names
+--- dir_in_path  directory names in |'cdpath'|
 --- environment  environment variable names
 --- event    autocommand events
 --- expression  Vim expression
@@ -3185,7 +3201,7 @@ function vim.fn.getjumplist(winnr, tabnr) end
 --- <To get lines from another buffer see |getbufline()| and
 --- |getbufoneline()|
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param end_? nil|false
 --- @return string
 function vim.fn.getline(lnum, end_) end
@@ -3249,8 +3265,8 @@ function vim.fn.getloclist(nr, what) end
 --- Refer to |getpos()| for getting information about a specific
 --- mark.
 ---
---- @param buf? any
---- @return any
+--- @param buf? integer?
+--- @return vim.fn.getmarklist.ret.item[]
 function vim.fn.getmarklist(buf) end
 
 --- Returns a |List| with all matches previously defined for the
@@ -3327,9 +3343,34 @@ function vim.fn.getmousepos() end
 --- @return integer
 function vim.fn.getpid() end
 
---- Get the position for String {expr}.  For possible values of
---- {expr} see |line()|.  For getting the cursor position see
---- |getcurpos()|.
+--- Get the position for String {expr}.
+--- The accepted values for {expr} are:
+---     .      The cursor position.
+---     $      The last line in the current buffer.
+---     'x      Position of mark x (if the mark is not set, 0 is
+---       returned for all values).
+---     w0      First line visible in current window (one if the
+---       display isn't updated, e.g. in silent Ex mode).
+---     w$      Last line visible in current window (this is one
+---       less than "w0" if no lines are visible).
+---     v      When not in Visual mode, returns the cursor
+---       position.  In Visual mode, returns the other end
+---       of the Visual area.  A good way to think about
+---       this is that in Visual mode "v" and "." complement
+---       each other.  While "." refers to the cursor
+---       position, "v" refers to where |v_o| would move the
+---       cursor.  As a result, you can use "v" and "."
+---       together to work on all of a selection in
+---       characterwise Visual mode.  If the cursor is at
+---       the end of a characterwise Visual area, "v" refers
+---       to the start of the same Visual area.  And if the
+---       cursor is at the start of a characterwise Visual
+---       area, "v" refers to the end of the same Visual
+---       area.  "v" differs from |'<| and |'>| in that it's
+---       updated right away.
+--- Note that a mark in another file can be used.  The line number
+--- then applies to another buffer.
+---
 --- The result is a |List| with four numbers:
 ---     [bufnum, lnum, col, off]
 --- "bufnum" is zero, unless a mark like '0 or 'A is used, then it
@@ -3340,20 +3381,25 @@ function vim.fn.getpid() end
 --- it is the offset in screen columns from the start of the
 --- character.  E.g., a position within a <Tab> or after the last
 --- character.
---- Note that for '< and '> Visual mode matters: when it is "V"
---- (visual line mode) the column of '< is zero and the column of
---- '> is a large number equal to |v:maxcol|.
+---
+--- For getting the cursor position see |getcurpos()|.
 --- The column number in the returned List is the byte position
 --- within the line. To get the character position in the line,
 --- use |getcharpos()|.
+---
+--- Note that for '< and '> Visual mode matters: when it is "V"
+--- (visual line mode) the column of '< is zero and the column of
+--- '> is a large number equal to |v:maxcol|.
 --- A very large column number equal to |v:maxcol| can be returned,
 --- in which case it means "after the end of the line".
 --- If {expr} is invalid, returns a list with all zeros.
+---
 --- This can be used to save and restore the position of a mark: >vim
 ---   let save_a_mark = getpos("'a")
 ---   " ...
 ---   call setpos("'a", save_a_mark)
---- <Also see |getcharpos()|, |getcurpos()| and |setpos()|.
+--- <
+--- Also see |getcharpos()|, |getcurpos()| and |setpos()|.
 ---
 --- @param expr string
 --- @return integer[]
@@ -3525,6 +3571,99 @@ function vim.fn.getreg(regname, list) end
 --- @return table
 function vim.fn.getreginfo(regname) end
 
+--- Returns the list of strings from {pos1} to {pos2} from a
+--- buffer.
+---
+--- {pos1} and {pos2} must both be |List|s with four numbers.
+--- See |getpos()| for the format of the list.  It's possible
+--- to specify positions from a different buffer, but please
+--- note the limitations at |getregion-notes|.
+---
+--- The optional argument {opts} is a Dict and supports the
+--- following items:
+---
+---   type    Specify the region's selection type.
+---       See |getregtype()| for possible values,
+---       except that the width can be omitted
+---       and an empty string cannot be used.
+---       (default: "v")
+---
+---   exclusive  If |TRUE|, use exclusive selection
+---       for the end position.
+---       (default: follow 'selection')
+---
+--- You can get the last selection type by |visualmode()|.
+--- If Visual mode is active, use |mode()| to get the Visual mode
+--- (e.g., in a |:vmap|).
+--- This function is useful to get text starting and ending in
+--- different columns, such as a |charwise-visual| selection.
+---
+---           *getregion-notes*
+--- Note that:
+--- - Order of {pos1} and {pos2} doesn't matter, it will always
+---   return content from the upper left position to the lower
+---   right position.
+--- - If 'virtualedit' is enabled and the region is past the end
+---   of the lines, resulting lines are padded with spaces.
+--- - If the region is blockwise and it starts or ends in the
+---   middle of a multi-cell character, it is not included but
+---   its selected part is substituted with spaces.
+--- - If {pos1} and {pos2} are not in the same buffer, an empty
+---   list is returned.
+--- - {pos1} and {pos2} must belong to a |bufloaded()| buffer.
+--- - It is evaluated in current window context, which makes a
+---   difference if the buffer is displayed in a window with
+---   different 'virtualedit' or 'list' values.
+---
+--- Examples: >vim
+---   xnoremap <CR>
+---   \ <Cmd>echom getregion(
+---   \ getpos('v'), getpos('.'), #{ type: mode() })<CR>
+--- <
+---
+--- @param pos1 table
+--- @param pos2 table
+--- @param opts? table
+--- @return string[]
+function vim.fn.getregion(pos1, pos2, opts) end
+
+--- Same as |getregion()|, but returns a list of positions
+--- describing the buffer text segments bound by {pos1} and
+--- {pos2}.
+--- The segments are a pair of positions for every line: >
+---   [[{start_pos}, {end_pos}], ...]
+--- <
+--- The position is a |List| with four numbers:
+---     [bufnum, lnum, col, off]
+--- "bufnum" is the buffer number.
+--- "lnum" and "col" are the position in the buffer.  The first
+--- column is 1.
+--- If the "off" number of a starting position is non-zero, it is
+--- the offset in screen columns from the start of the character.
+--- E.g., a position within a <Tab> or after the last character.
+--- If the "off" number of an ending position is non-zero, it is
+--- the offset of the character's first cell not included in the
+--- selection, otherwise all its cells are included.
+---
+--- Apart from the options supported by |getregion()|, {opts} also
+--- supports the following:
+---
+---   eol    If |TRUE|, indicate positions beyond
+---       the end of a line with "col" values
+---       one more than the length of the line.
+---       If |FALSE|, positions are limited
+---       within their lines, and if a line is
+---       empty or the selection is entirely
+---       beyond the end of a line, a "col"
+---       value of 0 is used for both positions.
+---       (default: |FALSE|)
+---
+--- @param pos1 table
+--- @param pos2 table
+--- @param opts? table
+--- @return integer[][][]
+function vim.fn.getregionpos(pos1, pos2, opts) end
+
 --- The result is a String, which is type of register {regname}.
 --- The value will be one of:
 ---     "v"      for |charwise| text
@@ -3572,11 +3711,11 @@ function vim.fn.getregtype(regname) end
 ---
 --- Examples: >vim
 ---   echo getscriptinfo({'name': 'myscript'})
----   echo getscriptinfo({'sid': 15}).variables
+---   echo getscriptinfo({'sid': 15})[0].variables
 --- <
 ---
 --- @param opts? table
---- @return any
+--- @return vim.fn.getscriptinfo.ret[]
 function vim.fn.getscriptinfo(opts) end
 
 --- If {tabnr} is not specified, then information about all the
@@ -4196,7 +4335,7 @@ function vim.fn.id(expr) end
 --- |getline()|.
 --- When {lnum} is invalid -1 is returned.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.indent(lnum) end
 
@@ -4865,28 +5004,16 @@ function vim.fn.libcall(libname, funcname, argument) end
 --- @return any
 function vim.fn.libcallnr(libname, funcname, argument) end
 
---- The result is a Number, which is the line number of the file
---- position given with {expr}.  The {expr} argument is a string.
---- The accepted positions are:
----     .      the cursor position
----     $      the last line in the current buffer
----     'x      position of mark x (if the mark is not set, 0 is
----       returned)
----     w0      first line visible in current window (one if the
----       display isn't updated, e.g. in silent Ex mode)
----     w$      last line visible in current window (this is one
----       less than "w0" if no lines are visible)
----     v      In Visual mode: the start of the Visual area (the
----       cursor is the end).  When not in Visual mode
----       returns the cursor position.  Differs from |'<| in
----       that it's updated right away.
---- Note that a mark in another file can be used.  The line number
---- then applies to another buffer.
+--- See |getpos()| for accepted positions.
+---
 --- To get the column number use |col()|.  To get both use
 --- |getpos()|.
+---
 --- With the optional {winid} argument the values are obtained for
 --- that window instead of the current window.
+---
 --- Returns 0 for invalid values of {expr} and {winid}.
+---
 --- Examples: >vim
 ---   echo line(".")      " line number of the cursor
 ---   echo line(".", winid)    " idem, in window "winid"
@@ -5204,8 +5331,9 @@ function vim.fn.mapcheck(name, mode, abbr) end
 ---   ounmap xyzzy
 ---   echo printf("Operator-pending mode bit: 0x%x", op_bit)
 ---
---- @return any
-function vim.fn.maplist() end
+--- @param abbr? 0|1
+--- @return table[]
+function vim.fn.maplist(abbr) end
 
 --- Like |map()| but instead of replacing items in {expr1} a new
 --- List or Dictionary is created and returned.  {expr1} remains
@@ -5314,6 +5442,7 @@ function vim.fn.mapset(dict) end
 --- Note that when {count} is added the way {start} works changes,
 --- see above.
 ---
+---         *match-pattern*
 --- See |pattern| for the patterns that are accepted.
 --- The 'ignorecase' option is used to set the ignore-caseness of
 --- the pattern.  'smartcase' is NOT used.  The matching is always
@@ -5472,25 +5601,28 @@ function vim.fn.matcharg(nr) end
 --- This function works only for loaded buffers. First call
 --- |bufload()| if needed.
 ---
+--- See |match-pattern| for information about the effect of some
+--- option settings on the pattern.
+---
 --- When {buf} is not a valid buffer, the buffer is not loaded or
 --- {lnum} or {end} is not valid then an error is given and an
 --- empty |List| is returned.
 ---
 --- Examples: >vim
 ---     " Assuming line 3 in buffer 5 contains "a"
----     :echo matchbufline(5, '\<\k\+\>', 3, 3)
----     [{'lnum': 3, 'byteidx': 0, 'text': 'a'}]
+---     echo matchbufline(5, '\<\k\+\>', 3, 3)
+--- <    `[{'lnum': 3, 'byteidx': 0, 'text': 'a'}]` >vim
 ---     " Assuming line 4 in buffer 10 contains "tik tok"
----     :echo matchbufline(10, '\<\k\+\>', 1, 4)
----     [{'lnum': 4, 'byteidx': 0, 'text': 'tik'}, {'lnum': 4, 'byteidx': 4, 'text': 'tok'}]
---- <
+---     echo matchbufline(10, '\<\k\+\>', 1, 4)
+--- <    `[{'lnum': 4, 'byteidx': 0, 'text': 'tik'}, {'lnum': 4, 'byteidx': 4, 'text': 'tok'}]`
+---
 --- If {submatch} is present and is v:true, then submatches like
 --- "\1", "\2", etc. are also returned.  Example: >vim
 ---     " Assuming line 2 in buffer 2 contains "acd"
----     :echo matchbufline(2, '\(a\)\?\(b\)\?\(c\)\?\(.*\)', 2, 2
+---     echo matchbufline(2, '\(a\)\?\(b\)\?\(c\)\?\(.*\)', 2, 2
 ---         \ {'submatches': v:true})
----     [{'lnum': 2, 'byteidx': 0, 'text': 'acd', 'submatches': ['a', '', 'c', 'd', '', '', '', '', '']}]
---- <The "submatches" List always contains 9 items.  If a submatch
+--- <    `[{'lnum': 2, 'byteidx': 0, 'text': 'acd', 'submatches': ['a', '', 'c', 'd', '', '', '', '', '']}]`
+--- The "submatches" List always contains 9 items.  If a submatch
 --- is not found, then an empty string is returned for that
 --- submatch.
 ---
@@ -5685,18 +5817,21 @@ function vim.fn.matchstr(expr, pat, start, count) end
 ---     submatches  a List of submatches.  Present only if
 ---     "submatches" is set to v:true in {dict}.
 ---
+--- See |match-pattern| for information about the effect of some
+--- option settings on the pattern.
+---
 --- Example: >vim
----     :echo matchstrlist(['tik tok'], '\<\k\+\>')
----     [{'idx': 0, 'byteidx': 0, 'text': 'tik'}, {'idx': 0, 'byteidx': 4, 'text': 'tok'}]
----     :echo matchstrlist(['a', 'b'], '\<\k\+\>')
----     [{'idx': 0, 'byteidx': 0, 'text': 'a'}, {'idx': 1, 'byteidx': 0, 'text': 'b'}]
---- <
+---     echo matchstrlist(['tik tok'], '\<\k\+\>')
+--- <    `[{'idx': 0, 'byteidx': 0, 'text': 'tik'}, {'idx': 0, 'byteidx': 4, 'text': 'tok'}]` >vim
+---     echo matchstrlist(['a', 'b'], '\<\k\+\>')
+--- <    `[{'idx': 0, 'byteidx': 0, 'text': 'a'}, {'idx': 1, 'byteidx': 0, 'text': 'b'}]`
+---
 --- If "submatches" is present and is v:true, then submatches like
 --- "\1", "\2", etc. are also returned.  Example: >vim
----     :echo matchstrlist(['acd'], '\(a\)\?\(b\)\?\(c\)\?\(.*\)',
+---     echo matchstrlist(['acd'], '\(a\)\?\(b\)\?\(c\)\?\(.*\)',
 ---         \ #{submatches: v:true})
----     [{'idx': 0, 'byteidx': 0, 'text': 'acd', 'submatches': ['a', '', 'c', 'd', '', '', '', '', '']}]
---- <The "submatches" List always contains 9 items.  If a submatch
+--- <    `[{'idx': 0, 'byteidx': 0, 'text': 'acd', 'submatches': ['a', '', 'c', 'd', '', '', '', '', '']}]`
+--- The "submatches" List always contains 9 items.  If a submatch
 --- is not found, then an empty string is returned for that
 --- submatch.
 ---
@@ -5886,17 +6021,14 @@ function vim.fn.min(expr) end
 --- When {flags} is present it must be a string.  An empty string
 --- has no effect.
 ---
---- If {flags} contains "p" then intermediate directories are
---- created as necessary.
+--- {flags} can contain these character flags:
+---  "p"  intermediate directories will be created as necessary
+---  "D"  {name} will be deleted at the end of the current
+---   function, but not recursively |:defer|
+---  "R"  {name} will be deleted recursively at the end of the
+---   current function |:defer|
 ---
---- If {flags} contains "D" then {name} is deleted at the end of
---- the current function, as with: >vim
----   defer delete({name}, 'd')
---- <
---- If {flags} contains "R" then {name} is deleted recursively at
---- the end of the current function, as with: >vim
----   defer delete({name}, 'rf')
---- <Note that when {name} has more than one part and "p" is used
+--- Note that when {name} has more than one part and "p" is used
 --- some directories may already exist.  Only the first one that
 --- is created and what it contains is scheduled to be deleted.
 --- E.g. when using: >vim
@@ -5930,7 +6062,7 @@ function vim.fn.min(expr) end
 function vim.fn.mkdir(name, flags, prot) end
 
 --- Return a string that indicates the current mode.
---- If [expr] is supplied and it evaluates to a non-zero Number or
+--- If {expr} is supplied and it evaluates to a non-zero Number or
 --- a non-empty String (|non-zero-arg|), then the full mode is
 --- returned, otherwise only the first letter is returned.
 --- Also see |state()|.
@@ -6059,12 +6191,7 @@ function vim.fn.msgpackdump(list, type) end
 ---      C parser does not support such values.
 --- float  |Float|. This value cannot possibly appear in
 ---   |msgpackparse()| output.
---- string  |readfile()|-style list of strings. This value will
----   appear in |msgpackparse()| output if string contains
----   zero byte or if string is a mapping key and mapping is
----   being represented as special dictionary for other
----   reasons.
---- binary  |String|, or |Blob| if binary string contains zero
+--- string  |String|, or |Blob| if binary string contains zero
 ---   byte. This value cannot appear in |msgpackparse()|
 ---   output since blobs were introduced.
 --- array  |List|. This value cannot appear in |msgpackparse()|
@@ -6457,6 +6584,9 @@ function vim.fn.prevnonblank(lnum) end
 ---     echo printf("%1$*2$.*3$f", 1.4142135, 6, 2)
 --- <      1.41
 ---
+--- You will get an overflow error |E1510|, when the field-width
+--- or precision will result in a string longer than 6400 chars.
+---
 ---           *E1500*
 --- You cannot mix positional and non-positional arguments: >vim
 ---     echo printf("%s%1$s", "One", "Two")
@@ -6517,7 +6647,7 @@ function vim.fn.prevnonblank(lnum) end
 ---
 --- @param fmt any
 --- @param expr1? any
---- @return any
+--- @return string
 function vim.fn.printf(fmt, expr1) end
 
 --- Returns the effective prompt text for buffer {buf}.  {buf} can
@@ -7133,7 +7263,7 @@ function vim.fn.screenchars(row, col) end
 --- the following mappings: >vim
 ---   nnoremap <expr> GG ":echom " .. screencol() .. "\n"
 ---   nnoremap <silent> GG :echom screencol()<CR>
----   noremap GG <Cmd>echom screencol()<Cr>
+---   noremap GG <Cmd>echom screencol()<CR>
 --- <
 ---
 --- @return any
@@ -7196,6 +7326,7 @@ function vim.fn.screenstring(row, col) end
 --- When a match has been found its line number is returned.
 --- If there is no match a 0 is returned and the cursor doesn't
 --- move.  No error message is given.
+--- To get the matched string, use |matchbufline()|.
 ---
 --- {flags} is a String, which can contain these character flags:
 --- 'b'  search Backward instead of forward
@@ -7530,8 +7661,15 @@ function vim.fn.searchdecl(name, global, thisblock) end
 ---        \ 'synIDattr(synID(line("."), col("."), 0), "name") =~? "string"')
 --- <
 ---
---- @return any
-function vim.fn.searchpair() end
+--- @param start any
+--- @param middle any
+--- @param end_ any
+--- @param flags? string
+--- @param skip? any
+--- @param stopline? any
+--- @param timeout? integer
+--- @return integer
+function vim.fn.searchpair(start, middle, end_, flags, skip, stopline, timeout) end
 
 --- Same as |searchpair()|, but returns a |List| with the line and
 --- column position of the match. The first element of the |List|
@@ -7543,8 +7681,15 @@ function vim.fn.searchpair() end
 --- <
 --- See |match-parens| for a bigger and more useful example.
 ---
---- @return any
-function vim.fn.searchpairpos() end
+--- @param start any
+--- @param middle any
+--- @param end_ any
+--- @param flags? string
+--- @param skip? any
+--- @param stopline? any
+--- @param timeout? integer
+--- @return [integer, integer]
+function vim.fn.searchpairpos(start, middle, end_, flags, skip, stopline, timeout) end
 
 --- Same as |search()|, but returns a |List| with the line and
 --- column position of the match. The first element of the |List|
@@ -8123,7 +8268,7 @@ function vim.fn.setqflist(list, action, what) end
 ---
 --- @param regname string
 --- @param value any
---- @param options? table
+--- @param options? string
 --- @return any
 function vim.fn.setreg(regname, value, options) end
 
@@ -8226,10 +8371,11 @@ function vim.fn.sha256(string) end
 --- Otherwise encloses {string} in single-quotes and replaces all
 --- "'" with "'\''".
 ---
---- If {special} is a |non-zero-arg|:
---- - Special items such as "!", "%", "#" and "<cword>" will be
----   preceded by a backslash. The backslash will be removed again
----   by the |:!| command.
+--- The {special} argument adds additional escaping of keywords
+--- used in Vim commands. If it is a |non-zero-arg|:
+--- - Special items such as "!", "%", "#" and "<cword>" (as listed
+---   in |expand()|) will be preceded by a backslash.
+---   The backslash will be removed again by the |:!| command.
 --- - The <NL> character is escaped.
 ---
 --- If 'shell' contains "csh" in the tail:
@@ -8295,6 +8441,7 @@ function vim.fn.sign_define(name, dict) end
 ---    icon    full path to the bitmap file for the sign.
 ---    linehl  highlight group used for the whole line the
 ---     sign is placed in.
+---    priority  default priority value of the sign
 ---    numhl  highlight group used for the line number where
 ---     the sign is placed.
 ---    text    text that is displayed when there is no icon
@@ -8345,6 +8492,7 @@ function vim.fn.sign_define(list) end
 ---    linehl  highlight group used for the whole line the
 ---     sign is placed in; not present if not set.
 ---    name    name of the sign
+---    priority  default priority value of the sign
 ---    numhl  highlight group used for the line number where
 ---     the sign is placed; not present if not set.
 ---    text    text that is displayed when there is no icon
@@ -8536,7 +8684,8 @@ function vim.fn.sign_place(id, group, name, buf, dict) end
 ---     priority  Priority of the sign. When multiple signs are
 ---     placed on a line, the sign with the highest
 ---     priority is used. If not specified, the
----     default value of 10 is used. See
+---     default value of 10 is used, unless specified
+---     otherwise by the sign definition. See
 ---     |sign-priority| for more information.
 ---
 --- If {id} refers to an existing sign, then the existing sign is
@@ -8733,7 +8882,8 @@ function vim.fn.sinh(expr) end
 --- Similar to using a |slice| "expr[start : end]", but "end" is
 --- used exclusive.  And for a string the indexes are used as
 --- character indexes instead of byte indexes.
---- Also, composing characters are not counted.
+--- Also, composing characters are treated as a part of the
+--- preceding base character.
 --- When {end} is omitted the slice continues to the last item.
 --- When {end} is -1 the last item is omitted.
 --- Returns an empty value if {start} or {end} are invalid.
@@ -9141,8 +9291,8 @@ function vim.fn.strcharlen(string) end
 --- of byte index and length.
 --- When {skipcc} is omitted or zero, composing characters are
 --- counted separately.
---- When {skipcc} set to 1, Composing characters are ignored,
---- similar to  |slice()|.
+--- When {skipcc} set to 1, composing characters are treated as a
+--- part of the preceding base character, similar to |slice()|.
 --- When a character index is used where a character does not
 --- exist it is omitted and counted as one character.  For
 --- example: >vim
@@ -9162,7 +9312,7 @@ function vim.fn.strcharpart(src, start, len, skipcc) end
 --- in String {string}.
 --- When {skipcc} is omitted or zero, composing characters are
 --- counted separately.
---- When {skipcc} set to 1, Composing characters are ignored.
+--- When {skipcc} set to 1, composing characters are ignored.
 --- |strcharlen()| always does this.
 ---
 --- Returns zero on error.
@@ -9285,10 +9435,10 @@ function vim.fn.stridx(haystack, needle, start) end
 --- for infinite and NaN floating-point values representations
 --- which use |str2float()|.  Strings are also dumped literally,
 --- only single quote is escaped, which does not allow using YAML
---- for parsing back binary strings.  |eval()| should always work for
---- strings and floats though and this is the only official
---- method, use |msgpackdump()| or |json_encode()| if you need to
---- share data with other application.
+--- for parsing back binary strings.  |eval()| should always work
+--- for strings and floats though, and this is the only official
+--- method.  Use |msgpackdump()| or |json_encode()| if you need to
+--- share data with other applications.
 ---
 --- @param expr any
 --- @return string
@@ -9684,9 +9834,13 @@ function vim.fn.synIDtrans(synID) end
 ---   synconcealed(lnum, 5)   [1, 'X', 2]
 ---   synconcealed(lnum, 6)   [0, '', 0]
 ---
+--- Note: Doesn't consider |matchadd()| highlighting items,
+--- since syntax and matching highlighting are two different
+--- mechanisms |syntax-vs-match|.
+---
 --- @param lnum integer
 --- @param col integer
---- @return {[1]: integer, [2]: string, [3]: integer}
+--- @return [integer, string, integer]
 function vim.fn.synconcealed(lnum, col) end
 
 --- Return a |List|, which is the stack of syntax items at the
@@ -10272,7 +10426,9 @@ function vim.fn.values(dict) end
 --- set to 8, it returns 8. |conceal| is ignored.
 --- For the byte position use |col()|.
 ---
---- For the use of {expr} see |col()|.
+--- For the use of {expr} see |getpos()| and |col()|.
+--- When {expr} is "$", it means the end of the cursor line, so
+--- the result is the number of cells in the cursor line plus one.
 ---
 --- When 'virtualedit' is used {expr} can be [lnum, col, off],
 --- where "off" is the offset in screen columns from the start of
@@ -10281,18 +10437,6 @@ function vim.fn.values(dict) end
 --- Virtual editing is active in the current mode, a position
 --- beyond the end of the line can be returned.  Also see
 --- |'virtualedit'|
----
---- The accepted positions are:
----     .      the cursor position
----     $      the end of the cursor line (the result is the
----       number of displayed characters in the cursor line
----       plus one)
----     'x      position of mark x (if the mark is not set, 0 is
----       returned)
----     v       In Visual mode: the start of the Visual area (the
----       cursor is the end).  When not in Visual mode
----       returns the cursor position.  Differs from |'<| in
----       that it's updated right away.
 ---
 --- If {list} is present and non-zero then virtcol() returns a
 --- List with the first and last screen position occupied by the
@@ -10312,7 +10456,9 @@ function vim.fn.values(dict) end
 ---   " With text "    there", with 't at 'h':
 ---
 ---   echo virtcol("'t")  " returns 6
---- <The first column is 1.  0 or [0, 0] is returned for an error.
+--- <
+--- The first column is 1.  0 or [0, 0] is returned for an error.
+---
 --- A more advanced example that echoes the maximum length of
 --- all lines: >vim
 ---     echo max(map(range(1, line('$')), "virtcol([v:val, '$'])"))
@@ -10528,17 +10674,16 @@ function vim.fn.win_move_statusline(nr, offset) end
 --- [1, 1], unless there is a tabline, then it is [2, 1].
 --- {nr} can be the window number or the |window-ID|.  Use zero
 --- for the current window.
---- Returns [0, 0] if the window cannot be found in the current
---- tabpage.
+--- Returns [0, 0] if the window cannot be found.
 ---
 --- @param nr integer
 --- @return any
 function vim.fn.win_screenpos(nr) end
 
---- Move the window {nr} to a new split of the window {target}.
---- This is similar to moving to {target}, creating a new window
---- using |:split| but having the same contents as window {nr}, and
---- then closing {nr}.
+--- Temporarily switch to window {target}, then move window {nr}
+--- to a new split adjacent to {target}.
+--- Unlike commands such as |:split|, no new windows are created
+--- (the |window-ID| of window {nr} is unchanged after the move).
 ---
 --- Both {nr} and {target} can be window numbers or |window-ID|s.
 --- Both must be in the current tab page.
@@ -10661,7 +10806,9 @@ function vim.fn.winline() end
 ---   #  the number of the last accessed window (where
 ---     |CTRL-W_p| goes to).  If there is no previous
 ---     window or it is in another tab page 0 is
----     returned.
+---     returned.  May refer to the current window in
+---     some cases (e.g. when evaluating 'statusline'
+---     expressions).
 ---   {N}j  the number of the Nth window below the
 ---     current window (where |CTRL-W_j| goes to).
 ---   {N}k  the number of the Nth window above the current

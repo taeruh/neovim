@@ -1,19 +1,28 @@
-local helpers = require('test.functional.helpers')(after_each)
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
 local Screen = require('test.functional.ui.screen')
-local clear, feed, command = helpers.clear, helpers.feed, helpers.command
-local fn = helpers.fn
-local api = helpers.api
-local eq = helpers.eq
-local eval = helpers.eval
-local retry = helpers.retry
-local testprg = helpers.testprg
-local is_os = helpers.is_os
+
+local clear, feed, command = n.clear, n.feed, n.command
+local fn = n.fn
+local api = n.api
+local eq = t.eq
+local eval = n.eval
+local retry = t.retry
+local testprg = n.testprg
+local is_os = t.is_os
 
 describe("'wildmenu'", function()
   local screen
   before_each(function()
     clear()
     screen = Screen.new(25, 5)
+    screen:set_default_attr_ids {
+      [1] = { foreground = Screen.colors.Blue, bold = true },
+      [2] = { reverse = true },
+      [3] = { bold = true, reverse = true },
+      [5] = { bold = true },
+      [31] = { foreground = Screen.colors.Grey0, background = Screen.colors.Yellow },
+    }
     screen:attach()
   end)
 
@@ -105,14 +114,14 @@ describe("'wildmenu'", function()
     feed(':sign <tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      define  jump  list  >    |
+      {1:~                        }|*2
+      {31:define}{3:  jump  list  >    }|
       :sign define^             |
     ]])
     feed('<C-E>')
     screen:expect([[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign ^                   |
     ]])
   end)
@@ -121,14 +130,14 @@ describe("'wildmenu'", function()
     feed(':sign <tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      define  jump  list  >    |
+      {1:~                        }|*2
+      {31:define}{3:  jump  list  >    }|
       :sign define^             |
     ]])
     feed('<tab><C-Y>')
     screen:expect([[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign jump^               |
     ]])
   end)
@@ -138,8 +147,8 @@ describe("'wildmenu'", function()
     feed(':sign <tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      define  jump  list  >    |
+      {1:~                        }|*2
+      {31:define}{3:  jump  list  >    }|
       :sign define^             |
     ]])
   end)
@@ -152,15 +161,15 @@ describe("'wildmenu'", function()
     feed(':sign <tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      define  jump  list  >    |
+      {1:~                        }|*2
+      {31:define}{3:  jump  list  >    }|
       :sign define^             |
     ]])
     feed('<space>')
     screen:expect([[
                                |
-      ~                        |*2
-      [No Name]                |
+      {1:~                        }|*2
+      {3:[No Name]                }|
       :sign define ^            |
     ]])
   end)
@@ -170,16 +179,16 @@ describe("'wildmenu'", function()
     feed(':j<Tab><Tab><Tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      join  jumps              |
+      {1:~                        }|*2
+      {3:join  jumps              }|
       :j^                       |
     ]])
     -- This would cause nvim to crash before #6650
     feed('<BS><Tab>')
     screen:expect([[
                                |
-      ~                        |*2
-      !  #  &  <  =  >  @  >   |
+      {1:~                        }|*2
+      {31:!}{3:  #  &  <  =  >  @  >   }|
       :!^                       |
     ]])
   end)
@@ -190,9 +199,13 @@ describe("'wildmenu'", function()
     feed((':terminal "%s" REP 5000 !terminal_output!<cr>'):format(testprg('shell-test')))
     feed('G') -- Follow :terminal output.
     feed([[:sign <Tab>]]) -- Invoke wildmenu.
+    screen:set_default_attr_ids {
+      [31] = { foreground = Screen.colors.Black, background = Screen.colors.Yellow },
+      [32] = { bold = true, foreground = Screen.colors.White, background = Screen.colors.DarkGreen },
+    }
     -- NB: in earlier versions terminal output was redrawn during cmdline mode.
     -- For now just assert that the screen remains unchanged.
-    screen:expect { any = 'define  jump  list  >    |\n:sign define^             |' }
+    screen:expect { any = '{31:define}{32:  jump  list  >    }|\n:sign define^             |' }
     screen:expect_unchanged()
 
     -- cmdline CTRL-D display should also be preserved.
@@ -222,8 +235,8 @@ describe("'wildmenu'", function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*2
-      define  jump  list  >    |
+      {1:~                        }|*2
+      {31:define}{3:  jump  list  >    }|
       :sign define^             |
     ]],
     }
@@ -231,10 +244,6 @@ describe("'wildmenu'", function()
   end)
 
   it('with laststatus=0, :vsplit, :term #2255', function()
-    -- Because this test verifies a _lack_ of activity after screen:sleep(), we
-    -- must wait the full timeout. So make it reasonable.
-    screen.timeout = 1000
-
     if not is_os('win') then
       command('set shell=sh') -- Need a predictable "$" prompt.
       command('let $PS1 = "$"')
@@ -254,10 +263,16 @@ describe("'wildmenu'", function()
 
     feed([[<C-\><C-N>]])
     feed([[:<Tab>]]) -- Invoke wildmenu.
+    screen:set_default_attr_ids {
+      [31] = { foreground = Screen.colors.Black, background = Screen.colors.Yellow },
+      [32] = { bold = true, foreground = Screen.colors.White, background = Screen.colors.DarkGreen },
+    }
     -- Check only the last 2 lines, because the shell output is
     -- system-dependent.
-    screen:expect { any = '!  #  &  <  =  >  @  >   |\n:!^' }
-    screen:expect_unchanged()
+    screen:expect { any = '{31:!}{32:  #  &  <  =  >  @  >   }|\n:!^' }
+    -- Because this test verifies a _lack_ of activity, we must wait the full timeout.
+    -- So make it reasonable.
+    screen:expect_unchanged(false, 1000)
   end)
 
   it('wildmode=list,full and messages interaction #10092', function()
@@ -268,27 +283,29 @@ describe("'wildmenu'", function()
     command('set showtabline=2')
     feed(':set wildm<tab>')
     screen:expect([[
-       [No Name]               |
+      {5: [No Name] }{2:              }|
                                |
-      ~                        |
-                               |
+      {1:~                        }|
+      {3:                         }|
       :set wildm               |
       wildmenu  wildmode       |
       :set wildm^               |
     ]])
     feed('<tab>') -- trigger wildmode full
     screen:expect([[
-       [No Name]               |
-                               |*2
+      {5: [No Name] }{2:              }|
+                               |
+      {3:                         }|
       :set wildm               |
-      wildmenu  wildmode       |*2
+      wildmenu  wildmode       |
+      {31:wildmenu}{3:  wildmode       }|
       :set wildmenu^            |
     ]])
     feed('<Esc>')
     screen:expect([[
-       [No Name]               |
+      {5: [No Name] }{2:              }|
       ^                         |
-      ~                        |*4
+      {1:~                        }|*4
                                |
     ]])
   end)
@@ -303,14 +320,14 @@ describe("'wildmenu'", function()
     feed(':sign u<tab>')
     screen:expect([[
                                |
-      ~                        |*5
+      {1:~                        }|*5
       :sign un^                 |
     ]])
     feed('<tab>') -- trigger wildmode list
     screen:expect([[
                                |
-      ~                        |*2
-                               |
+      {1:~                        }|*2
+      {3:                         }|
       :sign un                 |
       undefine  unplace        |
       :sign un^                 |
@@ -318,7 +335,7 @@ describe("'wildmenu'", function()
     feed('<Esc>')
     screen:expect([[
       ^                         |
-      ~                        |*5
+      {1:~                        }|*5
                                |
     ]])
 
@@ -326,8 +343,8 @@ describe("'wildmenu'", function()
     feed(':sign un<tab>')
     screen:expect([[
                                |
-      ~                        |*2
-                               |
+      {1:~                        }|*2
+      {3:                         }|
       :sign un                 |
       undefine  unplace        |
       :sign un^                 |
@@ -337,7 +354,7 @@ describe("'wildmenu'", function()
     feed('<Esc>')
     screen:expect([[
       ^                         |
-      ~                        |*5
+      {1:~                        }|*5
                                |
     ]])
   end)
@@ -350,8 +367,8 @@ describe("'wildmenu'", function()
     feed(':sign u<tab>')
     screen:expect([[
                                |
-      ~                        |*2
-                               |
+      {1:~                        }|*2
+      {3:                         }|
       :sign u                  |
       undefine  unplace        |
       :sign u^                  |
@@ -359,8 +376,8 @@ describe("'wildmenu'", function()
     feed('<tab>') -- trigger wildmode longest
     screen:expect([[
                                |
-      ~                        |*2
-                               |
+      {1:~                        }|*2
+      {3:                         }|
       :sign u                  |
       undefine  unplace        |
       :sign un^                 |
@@ -368,7 +385,7 @@ describe("'wildmenu'", function()
     feed('<Esc>')
     screen:expect([[
       ^                         |
-      ~                        |*5
+      {1:~                        }|*5
                                |
     ]])
   end)
@@ -381,15 +398,16 @@ describe("'wildmenu'", function()
     feed('<c-d>')
     screen:expect([[
                                |
-      ~                        |*2
-                               |
+      {1:~                        }|*2
+      {3:                         }|
       :set wildm               |
       wildmenu  wildmode       |
       :set wildm^               |
     ]])
     feed('<c-d>')
     screen:expect([[
-                               |*2
+                               |
+      {3:                         }|
       :set wildm               |
       wildmenu  wildmode       |
       :set wildm               |
@@ -399,8 +417,8 @@ describe("'wildmenu'", function()
     feed('<Esc>')
     screen:expect([[
       ^                         |
-      ~                        |*4
-      [No Name]                |
+      {1:~                        }|*4
+      {3:[No Name]                }|
                                |
     ]])
   end)
@@ -596,7 +614,7 @@ describe('ui/ext_wildmenu', function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign define^             |
     ]],
       wildmenu_items = expected,
@@ -607,7 +625,7 @@ describe('ui/ext_wildmenu', function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign jump^               |
     ]],
       wildmenu_items = expected,
@@ -618,7 +636,7 @@ describe('ui/ext_wildmenu', function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign ^                   |
     ]],
       wildmenu_items = expected,
@@ -629,7 +647,7 @@ describe('ui/ext_wildmenu', function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign define^             |
     ]],
       wildmenu_items = expected,
@@ -640,7 +658,7 @@ describe('ui/ext_wildmenu', function()
     screen:expect {
       grid = [[
                                |
-      ~                        |*3
+      {1:~                        }|*3
       :sign definea^            |
     ]],
     }

@@ -1283,6 +1283,44 @@ func Test_shortmess_F2()
   " call assert_fails('call test_getvalue("abc")', 'E475:')
 endfunc
 
+func Test_shortmess_F3()
+  call writefile(['foo'], 'X_dummy', 'D')
+
+  set hidden
+  set autoread
+  e X_dummy
+  e Xotherfile
+  call assert_equal(['foo'], getbufline('X_dummy', 1, '$'))
+  set shortmess+=F
+  echo ''
+
+  if has('nanotime')
+    sleep 10m
+  else
+    sleep 2
+  endif
+  call writefile(['bar'], 'X_dummy')
+  bprev
+  call assert_equal('', Screenline(&lines))
+  call assert_equal(['bar'], getbufline('X_dummy', 1, '$'))
+
+  if has('nanotime')
+    sleep 10m
+  else
+    sleep 2
+  endif
+  call writefile(['baz'], 'X_dummy')
+  checktime
+  call assert_equal('', Screenline(&lines))
+  call assert_equal(['baz'], getbufline('X_dummy', 1, '$'))
+
+  set shortmess&
+  set autoread&
+  set hidden&
+  bwipe X_dummy
+  bwipe Xotherfile
+endfunc
+
 func Test_local_scrolloff()
   set so=5
   set siso=7
@@ -1360,35 +1398,6 @@ func Test_buftype()
 
   call delete('XBuftype')
   bwipe!
-endfunc
-
-" Test for the 'shell' option
-func Test_shell()
-  throw 'Skipped: Nvim does not have :shell'
-  CheckUnix
-  let save_shell = &shell
-  set shell=
-  let caught_e91 = 0
-  try
-    shell
-  catch /E91:/
-    let caught_e91 = 1
-  endtry
-  call assert_equal(1, caught_e91)
-  let &shell = save_shell
-endfunc
-
-" Test for the 'shellquote' option
-func Test_shellquote()
-  CheckUnix
-  set shellquote=#
-  set verbose=20
-  redir => v
-  silent! !echo Hello
-  redir END
-  set verbose&
-  set shellquote&
-  call assert_match(': "#echo Hello#"', v)
 endfunc
 
 " Test for the 'rightleftcmd' option
@@ -1723,7 +1732,7 @@ func Test_cmdheight()
   set cmdheight&
 endfunc
 
-" To specify a control character as a option value, '^' can be used
+" To specify a control character as an option value, '^' can be used
 func Test_opt_control_char()
   set wildchar=^v
   call assert_equal("\<C-V>", nr2char(&wildchar))
@@ -2219,6 +2228,36 @@ func Test_set_wrap()
   call assert_equal(2, winline())
 
   set wrap& smoothscroll& scrolloff&
+endfunc
+
+func Test_delcombine()
+  new
+  set backspace=indent,eol,start
+
+  set delcombine
+  call setline(1, 'β̳̈:β̳̈')
+  normal! 0x
+  call assert_equal('β̈:β̳̈', getline(1))
+  exe "normal! A\<BS>"
+  call assert_equal('β̈:β̈', getline(1))
+  normal! 0x
+  call assert_equal('β:β̈', getline(1))
+  exe "normal! A\<BS>"
+  call assert_equal('β:β', getline(1))
+  normal! 0x
+  call assert_equal(':β', getline(1))
+  exe "normal! A\<BS>"
+  call assert_equal(':', getline(1))
+
+  set nodelcombine
+  call setline(1, 'β̳̈:β̳̈')
+  normal! 0x
+  call assert_equal(':β̳̈', getline(1))
+  exe "normal! A\<BS>"
+  call assert_equal(':', getline(1))
+
+  set backspace& delcombine&
+  bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

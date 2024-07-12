@@ -17,6 +17,37 @@ include(Deps)
 include(Find)
 include(Util)
 
+#-------------------------------------------------------------------------------
+# User settings
+#-------------------------------------------------------------------------------
+
+set(DEPS_IGNORE_SHA FALSE)
+
+# Options
+option(USE_BUNDLED "Use bundled dependencies." ON)
+
+option(USE_BUNDLED_LIBUV "Use the bundled libuv." ${USE_BUNDLED})
+option(USE_BUNDLED_LIBVTERM "Use the bundled libvterm." ${USE_BUNDLED})
+option(USE_BUNDLED_LPEG "Use the bundled lpeg." ${USE_BUNDLED})
+# PUC Lua is only used for tests, unless explicitly requested.
+option(USE_BUNDLED_LUA "Use the bundled version of lua." OFF)
+option(USE_BUNDLED_LUAJIT "Use the bundled version of luajit." ${USE_BUNDLED})
+option(USE_BUNDLED_LUV "Use the bundled version of luv." ${USE_BUNDLED})
+option(USE_BUNDLED_MSGPACK "Use the bundled msgpack." ${USE_BUNDLED})
+option(USE_BUNDLED_TS "Use the bundled treesitter runtime." ${USE_BUNDLED})
+option(USE_BUNDLED_TS_PARSERS "Use the bundled treesitter parsers." ${USE_BUNDLED})
+option(USE_BUNDLED_UNIBILIUM "Use the bundled unibilium." ${USE_BUNDLED})
+option(USE_BUNDLED_UTF8PROC "Use the bundled utf8proc library." ${USE_BUNDLED})
+if(USE_BUNDLED AND MSVC)
+  option(USE_BUNDLED_GETTEXT "Use the bundled version of gettext." ON)
+  option(USE_BUNDLED_LIBICONV "Use the bundled version of libiconv." ON)
+else()
+  option(USE_BUNDLED_GETTEXT "Use the bundled version of gettext." OFF)
+  option(USE_BUNDLED_LIBICONV "Use the bundled version of libiconv." OFF)
+endif()
+
+option(USE_EXISTING_SRC_DIR "Skip download of deps sources in case of existing source directory." OFF)
+
 set_default_buildtype(Release)
 get_property(isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(NOT isMultiConfig)
@@ -32,30 +63,6 @@ endif()
 
 set(DEPS_INCLUDE_FLAGS "-I${DEPS_INSTALL_DIR}/include -I${DEPS_INSTALL_DIR}/include/luajit-2.1")
 
-option(USE_BUNDLED "Use bundled dependencies." ON)
-
-option(USE_BUNDLED_LIBUV "Use the bundled libuv." ${USE_BUNDLED})
-option(USE_BUNDLED_LIBVTERM "Use the bundled libvterm." ${USE_BUNDLED})
-option(USE_BUNDLED_LPEG "Use the bundled lpeg." ${USE_BUNDLED})
-# PUC Lua is only used for tests, unless explicitly requested.
-option(USE_BUNDLED_LUA "Use the bundled version of lua." OFF)
-option(USE_BUNDLED_LUAJIT "Use the bundled version of luajit." ${USE_BUNDLED})
-option(USE_BUNDLED_LUV "Use the bundled version of luv." ${USE_BUNDLED})
-option(USE_BUNDLED_MSGPACK "Use the bundled msgpack." ${USE_BUNDLED})
-option(USE_BUNDLED_TS "Use the bundled treesitter runtime." ${USE_BUNDLED})
-option(USE_BUNDLED_TS_PARSERS "Use the bundled treesitter parsers." ${USE_BUNDLED})
-option(USE_BUNDLED_UNIBILIUM "Use the bundled unibilium." ${USE_BUNDLED})
-
-if(USE_BUNDLED AND MSVC)
-  option(USE_BUNDLED_GETTEXT "Use the bundled version of gettext." ON)
-  option(USE_BUNDLED_LIBICONV "Use the bundled version of libiconv." ON)
-else()
-  option(USE_BUNDLED_GETTEXT "Use the bundled version of gettext." OFF)
-  option(USE_BUNDLED_LIBICONV "Use the bundled version of libiconv." OFF)
-endif()
-
-option(USE_EXISTING_SRC_DIR "Skip download of deps sources in case of existing source directory." OFF)
-
 # If the macOS deployment target is not set manually (via $MACOSX_DEPLOYMENT_TARGET),
 # fall back to local system version. Needs to be done here and in top-level CMakeLists.txt.
 if(APPLE)
@@ -67,25 +74,6 @@ if(APPLE)
   endif()
   message(STATUS "Using deployment target ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
-
-set_directory_properties(PROPERTIES
-  EP_PREFIX "${DEPS_BUILD_DIR}"
-  CMAKE_CONFIGURE_DEPENDS deps.txt)
-
-file(READ deps.txt DEPENDENCIES)
-STRING(REGEX REPLACE "\n" ";" DEPENDENCIES "${DEPENDENCIES}")
-foreach(dep ${DEPENDENCIES})
-  STRING(REGEX REPLACE " " ";" dep "${dep}")
-  list(GET dep 0 name)
-  list(GET dep 1 value)
-  if(NOT ${name})
-    # _URL variables must NOT be set when USE_EXISTING_SRC_DIR is set,
-    # otherwise ExternalProject will try to re-download the sources.
-    if(NOT USE_EXISTING_SRC_DIR)
-      set(${name} ${value})
-    endif()
-  endif()
-endforeach()
 
 if(USE_BUNDLED_LUAJIT)
   set(LUA_ENGINE LuaJit)
@@ -151,6 +139,10 @@ endif()
 
 if(USE_BUNDLED_TS)
   include(BuildTreesitter)
+endif()
+
+if(USE_BUNDLED_UTF8PROC)
+  include(BuildUTF8proc)
 endif()
 
 if(WIN32)

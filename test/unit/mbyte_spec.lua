@@ -1,10 +1,10 @@
-local helpers = require('test.unit.helpers')(after_each)
-local itp = helpers.gen_itp(it)
+local t = require('test.unit.testutil')
+local itp = t.gen_itp(it)
 
-local ffi = helpers.ffi
-local eq = helpers.eq
+local ffi = t.ffi
+local eq = t.eq
 
-local lib = helpers.cimport('./src/nvim/mbyte.h', './src/nvim/charset.h', './src/nvim/grid.h')
+local lib = t.cimport('./src/nvim/mbyte.h', './src/nvim/charset.h', './src/nvim/grid.h')
 
 describe('mbyte', function()
   -- Convert from bytes to string
@@ -201,6 +201,76 @@ describe('mbyte', function()
         { '\xf4\x80\x80\x80\xe1\xaa\xb0\xcc\x81', 0x100000 },
         test_seq { 0xf4, 0x80, 0x80, 0x80, 0xe1, 0xaa, 0xb0, 0xcc, 0x81 }
       )
+    end)
+  end)
+
+  describe('utf_cp_bounds_len', function()
+    local to_cstr = t.to_cstr
+
+    local tests = {
+      {
+        name = 'for valid string',
+        str = 'iÀiiⱠiⱠⱠ𐀀i',
+        offsets = {
+          b = { 0, 0, 1, 0, 0, 0, 1, 2, 0, 0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 0 },
+          e = { 1, 2, 1, 1, 1, 3, 2, 1, 1, 3, 2, 1, 3, 2, 1, 4, 3, 2, 1, 1 },
+        },
+      },
+      {
+        name = 'for string with incomplete sequence',
+        str = 'i\xC3iÀⱠiÀ\xE2\xB1Ⱡ\xF0\x90\x80',
+        offsets = {
+          b = { 0, 0, 0, 0, 1, 0, 1, 2, 0, 0, 1, 0, 0, 0, 1, 2, 0, 0, 0 },
+          e = { 1, 1, 1, 2, 1, 3, 2, 1, 1, 2, 1, 1, 1, 3, 2, 1, 1, 1, 1 },
+        },
+      },
+      {
+        name = 'for string with trailing bytes after multibyte',
+        str = 'iÀ\xA0Ⱡ\xA0Ⱡ𐀀\xA0i',
+        offsets = {
+          b = { 0, 0, 1, 0, 0, 1, 2, 0, 0, 1, 2, 0, 1, 2, 3, 0, 0 },
+          e = { 1, 2, 1, 1, 3, 2, 1, 1, 3, 2, 1, 4, 3, 2, 1, 1, 1 },
+        },
+      },
+    }
+
+    for _, test in ipairs(tests) do
+      itp(test.name, function()
+        local cstr = to_cstr(test.str)
+        local b_offsets, e_offsets = {}, {}
+        for i = 1, #test.str do
+          local result = lib.utf_cp_bounds_len(cstr, cstr + i - 1, #test.str - (i - 1))
+          table.insert(b_offsets, result.begin_off)
+          table.insert(e_offsets, result.end_off)
+        end
+        eq(test.offsets, { b = b_offsets, e = e_offsets })
+      end)
+    end
+
+    itp('does not read before start', function()
+      local str = '𐀀'
+      local expected_offsets = { b = { 0, 0, 0 }, e = { 1, 1, 1 } }
+      local cstr = to_cstr(str) + 1
+      local b_offsets, e_offsets = {}, {}
+      for i = 1, 3 do
+        local result = lib.utf_cp_bounds_len(cstr, cstr + i - 1, 3 - (i - 1))
+        table.insert(b_offsets, result.begin_off)
+        table.insert(e_offsets, result.end_off)
+      end
+      eq(expected_offsets, { b = b_offsets, e = e_offsets })
+    end)
+
+    itp('does not read past the end', function()
+      local str = '𐀀'
+      local expected_offsets = { b = { 0, 0, 0 }, e = { 1, 1, 1 } }
+      local cstr = to_cstr(str)
+      local b_offsets, e_offsets = {}, {}
+      for i = 1, 3 do
+        local result = lib.utf_cp_bounds_len(cstr, cstr + i - 1, 3 - (i - 1))
+        table.insert(b_offsets, result.begin_off)
+        table.insert(e_offsets, result.end_off)
+      end
+      eq(expected_offsets, { b = b_offsets, e = e_offsets })
     end)
   end)
 end)

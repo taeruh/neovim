@@ -18,6 +18,7 @@
 #include "nvim/cmdexpand_defs.h"
 #include "nvim/cursor.h"
 #include "nvim/drawscreen.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/ex_cmds.h"
@@ -316,11 +317,6 @@ void do_tag(char *tag, int type, int count, int forceit, bool verbose)
   static char **matches = NULL;
   static int flags;
 
-  if (tfu_in_use) {
-    emsg(_(e_cannot_modify_tag_stack_within_tagfunc));
-    return;
-  }
-
 #ifdef EXITFREE
   if (type == DT_FREE) {
     // remove the list of matches
@@ -329,6 +325,15 @@ void do_tag(char *tag, int type, int count, int forceit, bool verbose)
     return;
   }
 #endif
+
+  if (tfu_in_use) {
+    emsg(_(e_cannot_modify_tag_stack_within_tagfunc));
+    return;
+  }
+
+  if (postponed_split == 0 && !check_can_set_curbuf_forceit(forceit)) {
+    return;
+  }
 
   if (type == DT_HELP) {
     type = DT_TAG;
@@ -445,7 +450,7 @@ void do_tag(char *tag, int type, int count, int forceit, bool verbose)
         }
         curwin->w_cursor.col = saved_fmark.mark.col;
         curwin->w_set_curswant = true;
-        check_cursor();
+        check_cursor(curwin);
         if ((fdo_flags & FDO_TAG) && old_KeyTyped) {
           foldOpenCursor();
         }
@@ -998,7 +1003,7 @@ static int add_llist_tags(char *tag, int num_matches, char **matches)
     if (len > 128) {
       len = 128;
     }
-    xstrlcpy(tag_name, tagp.tagname, (size_t)len + 1);
+    xmemcpyz(tag_name, tagp.tagname, (size_t)len);
     tag_name[len] = NUL;
 
     // Save the tag file name
@@ -1055,7 +1060,7 @@ static int add_llist_tags(char *tag, int num_matches, char **matches)
 
       // Precede the tag pattern with \V to make it very
       // nomagic.
-      STRCAT(cmd, "\\V");
+      strcat(cmd, "\\V");
       len += 2;
 
       int cmd_len = (int)(cmd_end - cmd_start + 1);
@@ -1464,7 +1469,7 @@ static bool findtags_in_help_init(findtags_state_T *st)
     // language name in help_lang[].
     i = (int)strlen(st->tag_fname);
     if (i > 3 && st->tag_fname[i - 3] == '-') {
-      xstrlcpy(st->help_lang, st->tag_fname + i - 2, 3);
+      xmemcpyz(st->help_lang, st->tag_fname + i - 2, 2);
     } else {
       STRCPY(st->help_lang, "en");
     }
@@ -2011,7 +2016,7 @@ static void findtags_add_match(findtags_state_T *st, tagptrs_T *tagpp, findtags_
       if (tagpp->command + 2 < temp_end) {
         len = (size_t)(temp_end - tagpp->command - 2);
         mfp = xmalloc(len + 2);
-        xstrlcpy(mfp, tagpp->command + 2, len + 1);
+        xmemcpyz(mfp, tagpp->command + 2, len);
       } else {
         mfp = NULL;
       }
@@ -2019,7 +2024,7 @@ static void findtags_add_match(findtags_state_T *st, tagptrs_T *tagpp, findtags_
     } else {
       len = (size_t)(tagpp->tagname_end - tagpp->tagname);
       mfp = xmalloc(sizeof(char) + len + 1);
-      xstrlcpy(mfp, tagpp->tagname, len + 1);
+      xmemcpyz(mfp, tagpp->tagname, len);
 
       // if wanted, re-read line to get long form too
       if (State & MODE_INSERT) {
@@ -2578,6 +2583,10 @@ int get_tagfname(tagname_T *tnp, int first, char *buf)
       // move the filename one char forward and truncate the
       // filepath with a NUL
       filename = path_tail(buf);
+      if (r_ptr != NULL) {
+        STRMOVE(r_ptr + 1, r_ptr);
+        r_ptr++;
+      }
       STRMOVE(filename + 1, filename);
       *filename++ = NUL;
 
@@ -2784,6 +2793,10 @@ static char *tag_full_fname(tagptrs_T *tagp)
 /// @return  OK for success, NOTAGFILE when file not found, FAIL otherwise.
 static int jumpto_tag(const char *lbuf_arg, int forceit, bool keep_help)
 {
+  if (postponed_split == 0 && !check_can_set_curbuf_forceit(forceit)) {
+    return FAIL;
+  }
+
   char *pbuf_end;
   char *tofree_fname = NULL;
   tagptrs_T tagp;
@@ -2934,6 +2947,8 @@ static int jumpto_tag(const char *lbuf_arg, int forceit, bool keep_help)
       str = skip_regexp(pbuf + 1, pbuf[0], false) + 1;
     }
     if (str > pbuf_end - 1) {   // search command with nothing following
+      size_t pbuflen = (size_t)(pbuf_end - pbuf);
+
       bool save_p_ws = p_ws;
       int save_p_ic = p_ic;
       int save_p_scs = p_scs;
@@ -2948,25 +2963,27 @@ static int jumpto_tag(const char *lbuf_arg, int forceit, bool keep_help)
         // start search before first line
         curwin->w_cursor.lnum = 0;
       }
-      if (do_search(NULL, pbuf[0], pbuf[0], pbuf + 1, 1, search_options, NULL)) {
+      if (do_search(NULL, pbuf[0], pbuf[0], pbuf + 1, pbuflen - 1, 1,
+                    search_options, NULL)) {
         retval = OK;
       } else {
         int found = 1;
 
         // try again, ignore case now
         p_ic = true;
-        if (!do_search(NULL, pbuf[0], pbuf[0], pbuf + 1, 1, search_options, NULL)) {
+        if (!do_search(NULL, pbuf[0], pbuf[0], pbuf + 1, pbuflen - 1, 1,
+                       search_options, NULL)) {
           // Failed to find pattern, take a guess: "^func  ("
           found = 2;
           test_for_static(&tagp);
           char cc = *tagp.tagname_end;
           *tagp.tagname_end = NUL;
-          snprintf(pbuf, LSIZE, "^%s\\s\\*(", tagp.tagname);
-          if (!do_search(NULL, '/', '/', pbuf, 1, search_options, NULL)) {
+          pbuflen = (size_t)snprintf(pbuf, LSIZE, "^%s\\s\\*(", tagp.tagname);
+          if (!do_search(NULL, '/', '/', pbuf, pbuflen, 1, search_options, NULL)) {
             // Guess again: "^char * \<func  ("
-            snprintf(pbuf, LSIZE, "^\\[#a-zA-Z_]\\.\\*\\<%s\\s\\*(",
-                     tagp.tagname);
-            if (!do_search(NULL, '/', '/', pbuf, 1, search_options, NULL)) {
+            pbuflen = (size_t)snprintf(pbuf, LSIZE, "^\\[#a-zA-Z_]\\.\\*\\<%s\\s\\*(",
+                                       tagp.tagname);
+            if (!do_search(NULL, '/', '/', pbuf, pbuflen, 1, search_options, NULL)) {
               found = 0;
             }
           }
@@ -2994,7 +3011,7 @@ static int jumpto_tag(const char *lbuf_arg, int forceit, bool keep_help)
 
       // A search command may have positioned the cursor beyond the end
       // of the line.  May need to correct that here.
-      check_cursor();
+      check_cursor(curwin);
     } else {
       const int save_secure = secure;
 
@@ -3039,7 +3056,7 @@ static int jumpto_tag(const char *lbuf_arg, int forceit, bool keep_help)
     if (l_g_do_tagpreview != 0
         && curwin != curwin_save && win_valid(curwin_save)) {
       // Return cursor to where we were
-      validate_cursor();
+      validate_cursor(curwin);
       redraw_later(curwin, UPD_VALID);
       win_enter(curwin_save, true);
     }
@@ -3171,7 +3188,7 @@ static int find_extra(char **pp)
 //
 // Free a single entry in a tag stack
 //
-static void tagstack_clear_entry(taggy_T *item)
+void tagstack_clear_entry(taggy_T *item)
 {
   XFREE_CLEAR(item->tagname);
   XFREE_CLEAR(item->user_data);
@@ -3260,7 +3277,7 @@ static int add_tag_field(dict_T *dict, const char *field_name, const char *start
     if (len > MAXPATHL - 1) {
       len = MAXPATHL - 1;
     }
-    xstrlcpy(buf, start, (size_t)len + 1);
+    xmemcpyz(buf, start, (size_t)len);
   }
   buf[len] = NUL;
   int retval = tv_dict_add_str(dict, field_name, strlen(field_name), buf);

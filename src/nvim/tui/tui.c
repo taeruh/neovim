@@ -23,6 +23,7 @@
 #include "nvim/globals.h"
 #include "nvim/grid.h"
 #include "nvim/grid_defs.h"
+#include "nvim/highlight.h"
 #include "nvim/highlight_defs.h"
 #include "nvim/log.h"
 #include "nvim/macros_defs.h"
@@ -114,6 +115,7 @@ struct TUIData {
   kvec_t(HlAttrs) attrs;
   int print_attr_id;
   bool default_attr;
+  bool set_default_colors;
   bool can_clear_attr;
   ModeShape showing_mode;
   Integer verbose;
@@ -165,6 +167,7 @@ void tui_start(TUIData **tui_p, int *width, int *height, char **term, bool *rgb)
   tui->seen_error_exit = 0;
   tui->loop = &main_loop;
   tui->url = -1;
+
   kv_init(tui->invalid_regions);
   kv_init(tui->urlbuf);
   signal_watcher_init(tui->loop, &tui->winch_handle, tui);
@@ -187,36 +190,6 @@ void tui_start(TUIData **tui_p, int *width, int *height, char **term, bool *rgb)
   *height = tui->height;
   *term = tui->term;
   *rgb = tui->rgb;
-}
-
-void tui_set_key_encoding(TUIData *tui)
-  FUNC_ATTR_NONNULL_ALL
-{
-  switch (tui->input.key_encoding) {
-  case kKeyEncodingKitty:
-    out(tui, S_LEN("\x1b[>1u"));
-    break;
-  case kKeyEncodingXterm:
-    out(tui, S_LEN("\x1b[>4;2m"));
-    break;
-  case kKeyEncodingLegacy:
-    break;
-  }
-}
-
-static void tui_reset_key_encoding(TUIData *tui)
-  FUNC_ATTR_NONNULL_ALL
-{
-  switch (tui->input.key_encoding) {
-  case kKeyEncodingKitty:
-    out(tui, S_LEN("\x1b[<1u"));
-    break;
-  case kKeyEncodingXterm:
-    out(tui, S_LEN("\x1b[>4;0m"));
-    break;
-  case kKeyEncodingLegacy:
-    break;
-  }
 }
 
 /// Request the terminal's mode (DECRQM).
@@ -255,6 +228,26 @@ void tui_handle_term_mode(TUIData *tui, TermMode mode, TermModeState state)
   }
 }
 
+/// Query the terminal emulator to see if it supports extended underline.
+static void tui_query_extended_underline(TUIData *tui)
+{
+  // Try to set an undercurl using an SGR sequence, followed by a DECRQSS SGR query.
+  // Reset attributes first, as other code may have set attributes.
+  out(tui, S_LEN("\x1b[0m\x1b[4:3m\x1bP$qm\x1b\\"));
+  tui->print_attr_id = -1;
+}
+
+void tui_enable_extended_underline(TUIData *tui)
+{
+  if (tui->unibi_ext.set_underline_style == -1) {
+    tui->unibi_ext.set_underline_style = (int)unibi_add_ext_str(tui->ut, "ext.set_underline_style",
+                                                                "\x1b[4:%p1%dm");
+  }
+  // Only support colon syntax. #9270
+  tui->unibi_ext.set_underline_color = (int)unibi_add_ext_str(tui->ut, "ext.set_underline_color",
+                                                              "\x1b[58:2::%p1%d:%p2%d:%p3%dm");
+}
+
 /// Query the terminal emulator to see if it supports Kitty's keyboard protocol.
 ///
 /// Write CSI ? u followed by a primary device attributes request (CSI c). If
@@ -268,6 +261,36 @@ static void tui_query_kitty_keyboard(TUIData *tui)
 {
   tui->input.waiting_for_kkp_response = true;
   out(tui, S_LEN("\x1b[?u\x1b[c"));
+}
+
+void tui_set_key_encoding(TUIData *tui)
+  FUNC_ATTR_NONNULL_ALL
+{
+  switch (tui->input.key_encoding) {
+  case kKeyEncodingKitty:
+    out(tui, S_LEN("\x1b[>1u"));
+    break;
+  case kKeyEncodingXterm:
+    out(tui, S_LEN("\x1b[>4;2m"));
+    break;
+  case kKeyEncodingLegacy:
+    break;
+  }
+}
+
+static void tui_reset_key_encoding(TUIData *tui)
+  FUNC_ATTR_NONNULL_ALL
+{
+  switch (tui->input.key_encoding) {
+  case kKeyEncodingKitty:
+    out(tui, S_LEN("\x1b[<1u"));
+    break;
+  case kKeyEncodingXterm:
+    out(tui, S_LEN("\x1b[>4;0m"));
+    break;
+  case kKeyEncodingLegacy:
+    break;
+  }
 }
 
 /// Enable the alternate screen and emit other control sequences to start the TUI.
@@ -306,6 +329,7 @@ static void terminfo_start(TUIData *tui)
   tui->unibi_ext.reset_scroll_region = -1;
   tui->unibi_ext.set_cursor_style = -1;
   tui->unibi_ext.reset_cursor_style = -1;
+  tui->unibi_ext.set_underline_style = -1;
   tui->unibi_ext.set_underline_color = -1;
   tui->unibi_ext.sync = -1;
   tui->out_fd = STDOUT_FILENO;
@@ -347,12 +371,16 @@ static void terminfo_start(TUIData *tui)
   const char *konsolev_env = os_getenv("KONSOLE_VERSION");
   int konsolev = konsolev_env ? (int)strtol(konsolev_env, NULL, 10)
                               : (konsole ? 1 : 0);
+  bool wezterm = strequal(termprg, "WezTerm");
+  const char *weztermv = wezterm ? os_getenv("TERM_PROGRAM_VERSION") : NULL;
+  bool screen = terminfo_is_term_family(term, "screen");
+  bool tmux = terminfo_is_term_family(term, "tmux") || !!os_getenv("TMUX");
 
   // truecolor support must be checked before patching/augmenting terminfo
   tui->rgb = term_has_truecolor(tui, colorterm);
 
   patch_terminfo_bugs(tui, term, colorterm, vtev, konsolev, iterm_env, nsterm);
-  augment_terminfo(tui, term, vtev, konsolev, iterm_env, nsterm);
+  augment_terminfo(tui, term, vtev, konsolev, weztermv, iterm_env, nsterm);
   tui->can_change_scroll_region =
     !!unibi_get_str(tui->ut, unibi_change_scroll_region);
   tui->can_set_lr_margin =
@@ -385,8 +413,18 @@ static void terminfo_start(TUIData *tui)
 
   // Query support for mode 2026 (Synchronized Output). Some terminals also
   // support an older DCS sequence for synchronized output, but we will only use
-  // mode 2026
-  tui_request_term_mode(tui, kTermModeSynchronizedOutput);
+  // mode 2026.
+  // Some terminals (such as Terminal.app) do not support DECRQM, so skip the query.
+  if (!nsterm) {
+    tui_request_term_mode(tui, kTermModeSynchronizedOutput);
+  }
+
+  // Don't use DECRQSS in screen or tmux, as they behave strangely when receiving it.
+  // Terminal.app also doesn't support DECRQSS.
+  if (tui->unibi_ext.set_underline_style == -1 && !(screen || tmux || nsterm)) {
+    // Query the terminal to see if it supports extended underline.
+    tui_query_extended_underline(tui);
+  }
 
   // Query the terminal to see if it supports Kitty's keyboard protocol
   tui_query_kitty_keyboard(tui);
@@ -456,10 +494,6 @@ static void terminfo_stop(TUIData *tui)
   unibi_out_ext(tui, tui->unibi_ext.disable_bracketed_paste);
   // Disable focus reporting
   unibi_out_ext(tui, tui->unibi_ext.disable_focus_reporting);
-
-  // Disable synchronized output
-  UNIBI_SET_NUM_VAR(tui->params[0], 0);
-  unibi_out_ext(tui, tui->unibi_ext.sync);
 
   flush_buf(tui);
   uv_tty_reset_mode();
@@ -932,17 +966,17 @@ static void print_spaces(TUIData *tui, int width)
   }
 }
 
-/// Move cursor to the position given by `row` and `col` and print the character in `cell`.
-/// This allows the grid and the host terminal to assume different widths of ambiguous-width chars.
+/// Move cursor to the position given by `row` and `col` and print the char in `cell`.
+/// Allows grid and host terminal to assume different widths of ambiguous-width chars.
 ///
-/// @param is_doublewidth  whether the character is double-width on the grid.
-///                        If true and the character is ambiguous-width, clear two cells.
+/// @param is_doublewidth  whether the char is double-width on the grid.
+///                        If true and the char is ambiguous-width, clear two cells.
 static void print_cell_at_pos(TUIData *tui, int row, int col, UCell *cell, bool is_doublewidth)
 {
   UGrid *grid = &tui->grid;
 
   if (grid->row == -1 && cell->data == NUL) {
-    // If cursor needs to repositioned and there is nothing to print, don't move cursor.
+    // If cursor needs repositioning and there is nothing to print, don't move cursor.
     return;
   }
 
@@ -950,10 +984,14 @@ static void print_cell_at_pos(TUIData *tui, int row, int col, UCell *cell, bool 
 
   char buf[MAX_SCHAR_SIZE];
   schar_get(buf, cell->data);
-  bool is_ambiwidth = utf_ambiguous_width(utf_ptr2char(buf));
-  if (is_ambiwidth && is_doublewidth) {
+  int c = utf_ptr2char(buf);
+  bool is_ambiwidth = utf_ambiguous_width(c);
+  if (is_doublewidth && (is_ambiwidth || utf_char2cells(c) == 1)) {
+    // If the server used setcellwidths() to treat a single-width char as double-width,
+    // it needs to be treated like an ambiguous-width char.
+    is_ambiwidth = true;
     // Clear the two screen cells.
-    // If the character is single-width in the host terminal it won't change the second cell.
+    // If the char is single-width in host terminal it won't change the second cell.
     update_attrs(tui, cell->attr);
     print_spaces(tui, 2);
     cursor_goto(tui, row, col);
@@ -962,7 +1000,7 @@ static void print_cell_at_pos(TUIData *tui, int row, int col, UCell *cell, bool 
   print_cell(tui, buf, cell->attr);
 
   if (is_ambiwidth) {
-    // Force repositioning cursor after printing an ambiguous-width character.
+    // Force repositioning cursor after printing an ambiguous-width char.
     grid->row = -1;
   }
 }
@@ -971,7 +1009,16 @@ static void clear_region(TUIData *tui, int top, int bot, int left, int right, in
 {
   UGrid *grid = &tui->grid;
 
-  update_attrs(tui, attr_id);
+  // Setting the default colors is delayed until after startup to avoid flickering
+  // with the default colorscheme background. Consequently, any flush that happens
+  // during startup would result in clearing invalidated regions with zeroed
+  // clear_attrs, perceived as a black flicker. Reset attributes to clear with
+  // current terminal background instead(#28667, #28668).
+  if (tui->set_default_colors) {
+    update_attrs(tui, attr_id);
+  } else {
+    unibi_out(tui, unibi_exit_attribute_mode);
+  }
 
   // Background is set to the default color and the right edge matches the
   // screen end, try to use terminal codes for clearing the requested area.
@@ -1206,7 +1253,7 @@ static void tui_set_mode(TUIData *tui, ModeShape mode)
       // We interpret "inverse" as "default" (no termcode for "inverse"...).
       // Hopefully the user's default cursor color is inverse.
       unibi_out_ext(tui, tui->unibi_ext.reset_cursor_color);
-    } else {
+    } else if (!tui->want_invisible && aep.rgb_bg_color >= 0) {
       char hexbuf[8];
       if (tui->set_cursor_color_as_str) {
         snprintf(hexbuf, 7 + 1, "#%06x", aep.rgb_bg_color);
@@ -1374,6 +1421,7 @@ void tui_default_colors_set(TUIData *tui, Integer rgb_fg, Integer rgb_bg, Intege
   tui->clear_attrs.cterm_bg_color = (int16_t)cterm_bg;
 
   tui->print_attr_id = -1;
+  tui->set_default_colors = true;
   invalidate(tui, 0, tui->grid.height, 0, tui->grid.width);
 }
 
@@ -1643,7 +1691,7 @@ static void invalidate(TUIData *tui, int top, int bot, int left, int right)
 static void ensure_space_buf_size(TUIData *tui, size_t len)
 {
   if (len > tui->space_buf_len) {
-    tui->space_buf = xrealloc(tui->space_buf, len * sizeof *tui->space_buf);
+    tui->space_buf = xrealloc(tui->space_buf, len);
     memset(tui->space_buf + tui->space_buf_len, ' ', len - tui->space_buf_len);
     tui->space_buf_len = len;
   }
@@ -1656,7 +1704,7 @@ void tui_guess_size(TUIData *tui)
   int width = 0;
   int height = 0;
 
-  // 1 - try from a system call(ioctl/TIOCGWINSZ on unix)
+  // 1 - try from a system call (ioctl/TIOCGWINSZ on unix)
   if (tui->out_isatty
       && !uv_tty_get_winsize(&tui->output_handle.tty, &width, &height)) {
     goto end;
@@ -1807,20 +1855,12 @@ static int unibi_find_ext_bool(unibi_term *ut, const char *name)
   return -1;
 }
 
-/// Determine if the terminal supports truecolor or not:
+/// Determine if the terminal supports truecolor or not.
 ///
-/// 1. If $COLORTERM is "24bit" or "truecolor", return true
-/// 2. Else, check terminfo for Tc, RGB, setrgbf, or setrgbb capabilities. If
-///    found, return true
-/// 3. Else, return false
+/// If terminfo contains Tc, RGB, or both setrgbf and setrgbb capabilities, return true.
 static bool term_has_truecolor(TUIData *tui, const char *colorterm)
 {
-  // Check $COLORTERM
-  if (strequal(colorterm, "truecolor") || strequal(colorterm, "24bit")) {
-    return true;
-  }
-
-  // Check for Tc and RGB
+  // Check for Tc or RGB
   for (size_t i = 0; i < unibi_count_ext_bool(tui->ut); i++) {
     const char *n = unibi_get_ext_bool_name(tui->ut, i);
     if (n && (!strcmp(n, "Tc") || !strcmp(n, "RGB"))) {
@@ -2168,7 +2208,7 @@ static void patch_terminfo_bugs(TUIData *tui, const char *term, const char *colo
 /// This adds stuff that is not in standard terminfo as extended unibilium
 /// capabilities.
 static void augment_terminfo(TUIData *tui, const char *term, int vte_version, int konsolev,
-                             bool iterm_env, bool nsterm)
+                             const char *weztermv, bool iterm_env, bool nsterm)
 {
   unibi_term *ut = tui->ut;
   bool xterm = terminfo_is_term_family(term, "xterm")
@@ -2327,16 +2367,12 @@ static void augment_terminfo(TUIData *tui, const char *term, int vte_version, in
   if (tui->unibi_ext.set_underline_style == -1) {
     int ext_bool_Su = unibi_find_ext_bool(ut, "Su");  // used by kitty
     if (vte_version >= 5102 || konsolev >= 221170
-        || (ext_bool_Su != -1
-            && unibi_get_ext_bool(ut, (size_t)ext_bool_Su))) {
-      tui->unibi_ext.set_underline_style = (int)unibi_add_ext_str(ut, "ext.set_underline_style",
-                                                                  "\x1b[4:%p1%dm");
+        || (ext_bool_Su != -1 && unibi_get_ext_bool(ut, (size_t)ext_bool_Su))
+        || (weztermv != NULL && strcmp(weztermv, "20210203-095643") > 0)) {
+      tui_enable_extended_underline(tui);
     }
-  }
-  if (tui->unibi_ext.set_underline_style != -1) {
-    // Only support colon syntax. #9270
-    tui->unibi_ext.set_underline_color = (int)unibi_add_ext_str(ut, "ext.set_underline_color",
-                                                                "\x1b[58:2::%p1%d:%p2%d:%p3%dm");
+  } else {
+    tui_enable_extended_underline(tui);
   }
 
   if (!kitty && (vte_version == 0 || vte_version >= 5400)) {
@@ -2464,7 +2500,7 @@ static const char *tui_get_stty_erase(int fd)
   struct termios t;
   if (tcgetattr(fd, &t) != -1) {
     stty_erase[0] = (char)t.c_cc[VERASE];
-    stty_erase[1] = '\0';
+    stty_erase[1] = NUL;
     DLOG("stty/termios:erase=%s", stty_erase);
   }
 #endif

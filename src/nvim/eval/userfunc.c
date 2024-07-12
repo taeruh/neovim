@@ -15,6 +15,7 @@
 #include "nvim/charset.h"
 #include "nvim/cmdexpand_defs.h"
 #include "nvim/debugger.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/encode.h"
 #include "nvim/eval/funcs.h"
@@ -264,7 +265,7 @@ static void set_ufunc_name(ufunc_T *fp, char *name)
   if ((uint8_t)name[0] == K_SPECIAL) {
     fp->uf_name_exp = xmalloc(strlen(name) + 3);
     STRCPY(fp->uf_name_exp, "<SNR>");
-    STRCAT(fp->uf_name_exp, fp->uf_name + 3);
+    strcat(fp->uf_name_exp, fp->uf_name + 3);
   }
 }
 
@@ -345,7 +346,7 @@ int get_lambda_tv(char **arg, typval_T *rettv, evalarg_T *evalarg)
     char *p = xmalloc(len);
     ((char **)(newlines.ga_data))[newlines.ga_len++] = p;
     STRCPY(p, "return ");
-    xstrlcpy(p + 7, start, (size_t)(end - start) + 1);
+    xmemcpyz(p + 7, start, (size_t)(end - start));
     if (strstr(p + 7, "a:") == NULL) {
       // No a: variables are used for sure.
       flags |= FC_NOARGS;
@@ -639,6 +640,44 @@ static char *fname_trans_sid(const char *const name, char *const fname_buf, char
     STRCPY(fname + i, name + llen);
   }
   return fname;
+}
+
+int get_func_arity(const char *name, int *required, int *optional, bool *varargs)
+{
+  int argcount = 0;
+  int min_argcount = 0;
+
+  const EvalFuncDef *fdef = find_internal_func(name);
+  if (fdef != NULL) {
+    argcount = fdef->max_argc;
+    min_argcount = fdef->min_argc;
+    *varargs = false;
+  } else {
+    char fname_buf[FLEN_FIXED + 1];
+    char *tofree = NULL;
+    int error = FCERR_NONE;
+
+    // May need to translate <SNR>123_ to K_SNR.
+    char *fname = fname_trans_sid(name, fname_buf, &tofree, &error);
+    ufunc_T *ufunc = NULL;
+    if (error == FCERR_NONE) {
+      ufunc = find_func(fname);
+    }
+    xfree(tofree);
+
+    if (ufunc == NULL) {
+      return FAIL;
+    }
+
+    argcount = ufunc->uf_args.ga_len;
+    min_argcount = ufunc->uf_args.ga_len - ufunc->uf_def_args.ga_len;
+    *varargs = ufunc->uf_varargs;
+  }
+
+  *required = min_argcount;
+  *optional = argcount - min_argcount;
+
+  return OK;
 }
 
 /// Find a function by name, return pointer to it in ufuncs.
@@ -2061,7 +2100,7 @@ char *get_scriptlocal_funcname(char *funcname)
   const int off = *funcname == 's' ? 2 : 5;
   char *newname = xmalloc(strlen(sid_buf) + strlen(funcname + off) + 1);
   STRCPY(newname, sid_buf);
-  STRCAT(newname, funcname + off);
+  strcat(newname, funcname + off);
 
   return newname;
 }
@@ -2294,17 +2333,28 @@ void ex_function(exarg_T *eap)
       arg = fudi.fd_newkey;
     }
     if (arg != NULL && (fudi.fd_di == NULL || !tv_is_func(fudi.fd_di->di_tv))) {
-      int j = ((uint8_t)(*arg) == K_SPECIAL) ? 3 : 0;
-      while (arg[j] != NUL && (j == 0 ? eval_isnamec1(arg[j]) : eval_isnamec(arg[j]))) {
-        j++;
+      char *name_base = arg;
+      if ((uint8_t)(*arg) == K_SPECIAL) {
+        name_base = vim_strchr(arg, '_');
+        if (name_base == NULL) {
+          name_base = arg + 3;
+        } else {
+          name_base++;
+        }
       }
-      if (arg[j] != NUL) {
+      int i;
+      for (i = 0; name_base[i] != NUL && (i == 0
+                                          ? eval_isnamec1(name_base[i])
+                                          : eval_isnamec(name_base[i])); i++) {}
+      if (name_base[i] != NUL) {
         emsg_funcname(e_invarg2, arg);
+        goto ret_free;
       }
     }
     // Disallow using the g: dict.
     if (fudi.fd_dict != NULL && fudi.fd_dict->dv_scope == VAR_DEF_SCOPE) {
       emsg(_("E862: Cannot use g: here"));
+      goto ret_free;
     }
   }
 
@@ -2354,7 +2404,7 @@ void ex_function(exarg_T *eap)
   // Read the body of the function, until ":endfunction" is found.
   if (KeyTyped) {
     // Check if the function already exists, don't let the user type the
-    // whole function before telling him it doesn't work!  For a script we
+    // whole function before telling them it doesn't work!  For a script we
     // need to skip the body to be able to find what follows.
     if (!eap->skip && !eap->forceit) {
       if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL) {
@@ -2398,10 +2448,10 @@ void ex_function(exarg_T *eap)
       }
     } else {
       xfree(line_to_free);
-      if (eap->getline == NULL) {
+      if (eap->ea_getline == NULL) {
         theline = getcmdline(':', 0, indent, do_concat);
       } else {
-        theline = eap->getline(':', eap->cookie, indent, do_concat);
+        theline = eap->ea_getline(':', eap->cookie, indent, do_concat);
       }
       line_to_free = theline;
     }
@@ -2422,7 +2472,7 @@ void ex_function(exarg_T *eap)
     }
 
     // Detect line continuation: SOURCING_LNUM increased more than one.
-    linenr_T sourcing_lnum_off = get_sourced_lnum(eap->getline, eap->cookie);
+    linenr_T sourcing_lnum_off = get_sourced_lnum(eap->ea_getline, eap->cookie);
     if (SOURCING_LNUM < sourcing_lnum_off) {
       sourcing_lnum_off -= SOURCING_LNUM;
     } else {
@@ -2565,11 +2615,13 @@ void ex_function(exarg_T *eap)
       //       and ":let [a, b] =<< [trim] EOF"
       arg = p;
       if (checkforcmd(&arg, "let", 2)) {
-        while (vim_strchr("$@&", *arg) != NULL) {
-          arg++;
+        int var_count = 0;
+        int semicolon = 0;
+        arg = (char *)skip_var_list(arg, &var_count, &semicolon, true);
+        if (arg != NULL) {
+          arg = skipwhite(arg);
         }
-        arg = skipwhite(find_name_end(arg, NULL, NULL, FNE_INCL_BR));
-        if (arg[0] == '=' && arg[1] == '<' && arg[2] == '<') {
+        if (arg != NULL && strncmp(arg, "=<<", 3) == 0) {
           p = skipwhite(arg + 3);
           while (true) {
             if (strncmp(p, "trim", 4) == 0) {

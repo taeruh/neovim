@@ -224,7 +224,11 @@ function M.gen(opt)
 
     -- ArrayType
     elseif type.kind == 'array' then
-      return parse_type(type.element, prefix) .. '[]'
+      local parsed_items = parse_type(type.element, prefix)
+      if type.element.items and #type.element.items > 1 then
+        parsed_items = '(' .. parsed_items .. ')'
+      end
+      return parsed_items .. '[]'
 
     -- OrType
     elseif type.kind == 'or' then
@@ -255,10 +259,13 @@ function M.gen(opt)
       if prefix then
         anonymous_classname = anonymous_classname .. '.' .. prefix
       end
-      local anonym = vim.tbl_flatten { -- remove nil
-        anonymous_num > 1 and '' or nil,
-        '---@class ' .. anonymous_classname,
-      }
+      local anonym = vim
+        .iter({
+          (anonymous_num > 1 and { '' } or {}),
+          { '---@class ' .. anonymous_classname },
+        })
+        :flatten()
+        :totable()
 
       --- @class vim._gen_lsp.StructureLiteral translated to anonymous @class.
       --- @field deprecated? string
@@ -290,13 +297,13 @@ function M.gen(opt)
 
     -- TupleType
     elseif type.kind == 'tuple' then
-      local tuple = '{ '
-      for i, value in ipairs(type.items) do
-        tuple = tuple .. '[' .. i .. ']: ' .. parse_type(value, prefix) .. ', '
+      local tuple = '['
+      for _, value in ipairs(type.items) do
+        tuple = tuple .. parse_type(value, prefix) .. ', '
       end
       -- remove , at the end
       tuple = tuple:sub(0, -3)
-      return tuple .. ' }'
+      return tuple .. ']'
     end
 
     vim.print('WARNING: Unknown type ', type)

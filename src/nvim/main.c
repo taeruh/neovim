@@ -14,7 +14,9 @@
 #include <string.h>
 #ifdef ENABLE_ASAN_UBSAN
 # include <sanitizer/asan_interface.h>
-# include <sanitizer/ubsan_interface.h>
+# ifndef MSWIN
+#  include <sanitizer/ubsan_interface.h>
+# endif
 #endif
 
 #include "auto/config.h"  // IWYU pragma: keep
@@ -35,6 +37,7 @@
 #include "nvim/diff.h"
 #include "nvim/drawline.h"
 #include "nvim/drawscreen.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/typval_defs.h"
@@ -61,6 +64,7 @@
 #include "nvim/log.h"
 #include "nvim/lua/executor.h"
 #include "nvim/lua/secure.h"
+#include "nvim/lua/treesitter.h"
 #include "nvim/macros_defs.h"
 #include "nvim/main.h"
 #include "nvim/mark.h"
@@ -70,7 +74,6 @@
 #include "nvim/mouse.h"
 #include "nvim/move.h"
 #include "nvim/msgpack_rpc/channel.h"
-#include "nvim/msgpack_rpc/helpers.h"
 #include "nvim/msgpack_rpc/server.h"
 #include "nvim/normal.h"
 #include "nvim/ops.h"
@@ -152,11 +155,8 @@ void event_init(void)
   loop_init(&main_loop, NULL);
   resize_events = multiqueue_new_child(main_loop.events);
 
-  // early msgpack-rpc initialization
-  msgpack_rpc_helpers_init();
-  input_init();
   signal_init();
-  // finish mspgack-rpc initialization
+  // mspgack-rpc initialization
   channel_init();
   terminal_init();
   ui_init();
@@ -356,6 +356,12 @@ int main(int argc, char **argv)
     ui_client_channel_id = rv;
   }
 
+  if (ui_client_channel_id) {
+    time_finish();
+    ui_client_run(remote_ui);  // NORETURN
+  }
+  assert(!ui_client_channel_id && !use_builtin_ui);
+
   TIME_MSG("expanding arguments");
 
   if (params.diff_mode && params.window_count == -1) {
@@ -366,7 +372,7 @@ int main(int argc, char **argv)
 
   setbuf(stdout, NULL);  // NOLINT(bugprone-unsafe-functions)
 
-  full_screen = !silent_mode;
+  full_screen = !silent_mode || exmode_active;
 
   // Set the default values for the options that use Rows and Columns.
   win_init_size();
@@ -398,12 +404,6 @@ int main(int argc, char **argv)
     input_start();
   }
 
-  if (ui_client_channel_id) {
-    time_finish();
-    ui_client_run(remote_ui);  // NORETURN
-  }
-  assert(!ui_client_channel_id && !use_builtin_ui);
-
   // Wait for UIs to set up Nvim or show early messages
   // and prompts (--cmd, swapfile dialog, …).
   bool use_remote_ui = (embedded_mode && !headless_mode);
@@ -426,7 +426,19 @@ int main(int argc, char **argv)
     params.edit_type = EDIT_STDIN;
   }
 
-  open_script_files(&params);
+  if (params.scriptin) {
+    if (!open_scriptin(params.scriptin)) {
+      os_exit(2);
+    }
+  }
+  if (params.scriptout) {
+    scriptout = os_fopen(params.scriptout, params.scriptout_append ? APPENDBIN : WRITEBIN);
+    if (scriptout == NULL) {
+      fprintf(stderr, _("Cannot open for script output: \""));
+      fprintf(stderr, "%s\"\n", params.scriptout);
+      os_exit(2);
+    }
+  }
 
   nlua_init_defaults();
 
@@ -630,7 +642,7 @@ int main(int argc, char **argv)
 
   // WORKAROUND(mhi): #3023
   if (cb_flags & CB_UNNAMEDMASK) {
-    eval_has_provider("clipboard");
+    eval_has_provider("clipboard", false);
   }
 
   if (params.luaf != NULL) {
@@ -1088,27 +1100,13 @@ static void command_line_scan(mparm_T *parmp)
           // set stdout to binary to avoid crlf in --api-info output
           _setmode(STDOUT_FILENO, _O_BINARY);
 #endif
-          FileDescriptor fp;
-          const int fof_ret = file_open_fd(&fp, STDOUT_FILENO,
-                                           kFileWriteOnly);
-          msgpack_packer *p = msgpack_packer_new(&fp, msgpack_file_write);
 
-          if (fof_ret != 0) {
-            semsg(_("E5421: Failed to open stdin: %s"), os_strerror(fof_ret));
+          String data = api_metadata_raw();
+          const ptrdiff_t written_bytes = os_write(STDOUT_FILENO, data.data, data.size, false);
+          if (written_bytes < 0) {
+            semsg(_("E5420: Failed to write to file: %s"), os_strerror((int)written_bytes));
           }
 
-          if (p == NULL) {
-            emsg(_(e_outofmem));
-          }
-
-          Object md = DICTIONARY_OBJ(api_metadata());
-          msgpack_rpc_from_object(&md, p);
-
-          msgpack_packer_free(p);
-          const int ff_ret = file_flush(&fp);
-          if (ff_ret < 0) {
-            msgpack_file_write_error(ff_ret);
-          }
           os_exit(0);
         } else if (STRICMP(argv[0] + argv_idx, "headless") == 0) {
           headless_mode = true;
@@ -1436,6 +1434,17 @@ scripterror:
       ga_grow(&global_alist.al_ga, 1);
       char *p = xstrdup(argv[0]);
 
+      // On Windows expand "~\" or "~/" prefix in file names to profile directory.
+#ifdef MSWIN
+      if (*p == '~' && (p[1] == '\\' || p[1] == '/')) {
+        size_t size = strlen(os_get_homedir()) + strlen(p);
+        char *tilde_expanded = xmalloc(size);
+        snprintf(tilde_expanded, size, "%s%s", os_get_homedir(), p + 1);
+        xfree(p);
+        p = tilde_expanded;
+      }
+#endif
+
       if (parmp->diff_mode && os_isdir(p) && GARGCOUNT > 0
           && !os_isdir(alist_name(&GARGLIST[0]))) {
         char *r = concat_fnames(p, path_tail(alist_name(&GARGLIST[0])), true);
@@ -1568,7 +1577,7 @@ static void handle_quickfix(mparm_T *paramp)
 {
   if (paramp->edit_type == EDIT_QF) {
     if (paramp->use_ef != NULL) {
-      set_string_option_direct(kOptErrorfile, paramp->use_ef, 0, SID_CARG);
+      set_option_direct(kOptErrorfile, CSTR_AS_OPTVAL(paramp->use_ef), 0, SID_CARG);
     }
     vim_snprintf(IObuff, IOSIZE, "cfile %s", p_ef);
     if (qf_init(NULL, p_ef, p_efm, true, IObuff, p_menc) < 0) {
@@ -1618,37 +1627,6 @@ static void read_stdin(void)
   msg_didany = save_msg_didany;
   TIME_MSG("reading stdin");
   check_swap_exists_action();
-}
-
-static void open_script_files(mparm_T *parmp)
-{
-  if (parmp->scriptin) {
-    int error;
-    if (strequal(parmp->scriptin, "-")) {
-      FileDescriptor *stdin_dup = file_open_stdin();
-      scriptin[0] = stdin_dup;
-    } else {
-      scriptin[0] = file_open_new(&error, parmp->scriptin,
-                                  kFileReadOnly|kFileNonBlocking, 0);
-      if (scriptin[0] == NULL) {
-        vim_snprintf(IObuff, IOSIZE,
-                     _("Cannot open for reading: \"%s\": %s\n"),
-                     parmp->scriptin, os_strerror(error));
-        fprintf(stderr, "%s", IObuff);
-        os_exit(2);
-      }
-    }
-    save_typebuf();
-  }
-
-  if (parmp->scriptout) {
-    scriptout = os_fopen(parmp->scriptout, parmp->scriptout_append ? APPENDBIN : WRITEBIN);
-    if (scriptout == NULL) {
-      fprintf(stderr, _("Cannot open for script output: \""));
-      fprintf(stderr, "%s\"\n", parmp->scriptout);
-      os_exit(2);
-    }
-  }
 }
 
 // Create the requested number of windows and edit buffers in them.

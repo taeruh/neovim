@@ -7,6 +7,7 @@
 --- @field varname? string
 --- @field pv_name? string
 --- @field type 'boolean'|'number'|'string'
+--- @field hidden? boolean
 --- @field immutable? boolean
 --- @field list? 'comma'|'onecomma'|'commacolon'|'onecommacolon'|'flags'|'flagscomma'
 --- @field scope vim.option_scope[]
@@ -90,6 +91,7 @@ return {
     {
       abbreviation = 'al',
       defaults = { if_true = 224 },
+      enable_if = false,
       full_name = 'aleph',
       scope = { 'global' },
       short_desc = N_('ASCII code of the letter Aleph (Hebrew)'),
@@ -99,14 +101,13 @@ return {
       abbreviation = 'ari',
       defaults = { if_true = false },
       desc = [=[
-        Allow CTRL-_ in Insert and Command-line mode.  This is default off, to
-        avoid that users that accidentally type CTRL-_ instead of SHIFT-_ get
-        into reverse Insert mode, and don't know how to get out.  See
-        'revins'.
+        Allow CTRL-_ in Insert mode.  This is default off, to avoid that users
+        that accidentally type CTRL-_ instead of SHIFT-_ get into reverse
+        Insert mode, and don't know how to get out.  See 'revins'.
       ]=],
       full_name = 'allowrevins',
       scope = { 'global' },
-      short_desc = N_('allow CTRL-_ in Insert and Command-line mode'),
+      short_desc = N_('allow CTRL-_ in Insert mode'),
       type = 'boolean',
       varname = 'p_ari',
     },
@@ -1323,8 +1324,8 @@ return {
       defaults = { if_true = '' },
       desc = [=[
         A template for a comment.  The "%s" in the value is replaced with the
-        comment text.  For example, C uses "/*%s*/". Currently only used to
-        add markers for folding, see |fold-marker|.
+        comment text, and should be padded with a space when possible.
+        Used for |commenting| and to add markers for folding, see |fold-marker|.
       ]=],
       full_name = 'commentstring',
       redraw = { 'curswant' },
@@ -1442,6 +1443,10 @@ return {
         	    completion in the preview window.  Only works in
         	    combination with "menu" or "menuone".
 
+           popup    Show extra information about the currently selected
+        	    completion in a popup window.  Only works in combination
+        	    with "menu" or "menuone".  Overrides "preview".
+
            noinsert Do not insert any text for a match until the user selects
         	    a match from the menu. Only works in combination with
         	    "menu" or "menuone". No effect if "longest" is present.
@@ -1450,14 +1455,18 @@ return {
         	    select one from the menu. Only works in combination with
         	    "menu" or "menuone".
 
-           popup    Show extra information about the currently selected
-        	    completion in a popup window.  Only works in combination
-        	    with "menu" or "menuone".  Overrides "preview".
+           fuzzy    Enable |fuzzy-matching| for completion candidates. This
+        	    allows for more flexible and intuitive matching, where
+        	    characters can be skipped and matches can be found even
+        	    if the exact sequence is not typed.  Only makes a
+        	    difference how completion candidates are reduced from the
+        	    list of alternatives, but not how the candidates are
+        	    collected (using different completion types).
       ]=],
       expand_cb = 'expand_set_completeopt',
       full_name = 'completeopt',
       list = 'onecomma',
-      scope = { 'global' },
+      scope = { 'global', 'buffer' },
       short_desc = N_('options for Insert mode completion'),
       type = 'string',
       varname = 'p_cot',
@@ -3367,6 +3376,8 @@ return {
         Format to recognize for the ":grep" command output.
         This is a scanf-like string that uses the same format as the
         'errorformat' option: see |errorformat|.
+
+        If ripgrep ('grepprg') is available, this option defaults to `%f:%l:%c:%m`.
       ]=],
       full_name = 'grepformat',
       list = 'onecomma',
@@ -3379,10 +3390,9 @@ return {
       abbreviation = 'gp',
       defaults = {
         condition = 'MSWIN',
-        if_false = 'grep -n $* /dev/null',
+        if_false = 'grep -HIn $* /dev/null',
         if_true = 'findstr /n $* nul',
-        doc = [["grep -n ",
-           Unix: "grep -n $* /dev/null"]],
+        doc = [[see below]],
       },
       desc = [=[
         Program to use for the |:grep| command.  This option may contain '%'
@@ -3390,16 +3400,23 @@ return {
         line.  The placeholder "$*" is allowed to specify where the arguments
         will be included.  Environment variables are expanded |:set_env|.  See
         |option-backslash| about including spaces and backslashes.
-        When your "grep" accepts the "-H" argument, use this to make ":grep"
-        also work well with a single file: >vim
-        	set grepprg=grep\ -nH
-        <	Special value: When 'grepprg' is set to "internal" the |:grep| command
+        Special value: When 'grepprg' is set to "internal" the |:grep| command
         works like |:vimgrep|, |:lgrep| like |:lvimgrep|, |:grepadd| like
         |:vimgrepadd| and |:lgrepadd| like |:lvimgrepadd|.
         See also the section |:make_makeprg|, since most of the comments there
         apply equally to 'grepprg'.
         This option cannot be set from a |modeline| or in the |sandbox|, for
         security reasons.
+        This option defaults to:
+        - `rg --vimgrep -uu ` if ripgrep is available (|:checkhealth|),
+        - `grep -HIn $* /dev/null` on Unix,
+        - `findstr /n $* nul` on Windows.
+        Ripgrep can perform additional filtering such as using .gitignore rules
+        and skipping hidden files. This is disabled by default (see the -u option)
+        to more closely match the behaviour of standard grep.
+        You can make ripgrep match Vim's case handling using the
+        -i/--ignore-case and -S/--smart-case options.
+        An |OptionSet| autocmd can be used to set it up to match automatically.
       ]=],
       expand = true,
       full_name = 'grepprg',
@@ -4478,7 +4495,7 @@ return {
     {
       abbreviation = 'jop',
       cb = 'did_set_jumpoptions',
-      defaults = { if_true = '' },
+      defaults = { if_true = 'unload' },
       deny_duplicates = true,
       desc = [=[
         List of words that change the behavior of the |jumplist|.
@@ -4491,6 +4508,9 @@ return {
           view          When moving through the jumplist, |changelist|,
         		|alternate-file| or using |mark-motions| try to
         		restore the |mark-view| in which the action occurred.
+
+          unload        Remove unloaded buffers from the jumplist.
+        		EXPERIMENTAL: this flag may change in the future.
       ]=],
       expand_cb = 'expand_set_jumpoptions',
       full_name = 'jumpoptions',
@@ -4859,6 +4879,9 @@ return {
         between tabs and spaces and for trailing blanks. Further changed by
         the 'listchars' option.
 
+        When 'listchars' does not contain "tab" field, tabs are shown as "^I"
+        or "<09>", like how unprintable characters are displayed.
+
         The cursor is displayed at the start of the space a Tab character
         occupies, not at the end as usual in Normal mode.  To get this cursor
         position while displaying Tabs with spaces, use: >vim
@@ -5142,12 +5165,12 @@ return {
     },
     {
       abbreviation = 'mco',
-      defaults = { if_true = 6 },
+      defaults = { if_true = imacros('MAX_MCO') },
       full_name = 'maxcombine',
       scope = { 'global' },
       short_desc = N_('maximum nr of combining characters displayed'),
       type = 'number',
-      varname = 'p_mco',
+      hidden = true,
     },
     {
       abbreviation = 'mfd',
@@ -5459,7 +5482,6 @@ return {
         When on, the mouse pointer is hidden when characters are typed.
         The mouse pointer is restored when the mouse is moved.
       ]=],
-      enable_if = false,
       full_name = 'mousehide',
       redraw = { 'ui_option' },
       scope = { 'global' },
@@ -5695,6 +5717,20 @@ return {
         	    (without "unsigned" it would become "9-2019").
         	    Using CTRL-X on "0" or CTRL-A on "18446744073709551615"
         	    (2^64 - 1) has no effect, overflow is prevented.
+        blank	If included, treat numbers as signed or unsigned based on
+        	preceding whitespace. If a number with a leading dash has its
+        	dash immediately preceded by a non-whitespace character (i.e.,
+        	not a tab or a " "), the negative sign won't be considered as
+        	part of the number.  For example:
+        	    Using CTRL-A on "14" in "Carbon-14" results in "Carbon-15"
+        	    (without "blank" it would become "Carbon-13").
+        	    Using CTRL-X on "8" in "Carbon -8" results in "Carbon -9"
+        	    (because -8 is preceded by whitespace. If "unsigned" was
+        	    set, it would result in "Carbon -7").
+        	If this format is included, overflow is prevented as if
+        	"unsigned" were set. If both this format and "unsigned" are
+        	included, "unsigned" will take precedence.
+
         Numbers which simply begin with a digit in the range 1-9 are always
         considered decimal.  This also happens for numbers that are not
         recognized as octal or hex.
@@ -5875,6 +5911,7 @@ return {
     {
       abbreviation = 'pt',
       defaults = { if_true = '' },
+      enable_if = false,
       full_name = 'pastetoggle',
       scope = { 'global' },
       short_desc = N_('No description'),
@@ -6573,9 +6610,6 @@ return {
         top are deleted if new lines exceed this limit.
         Minimum is 1, maximum is 100000.
         Only in |terminal| buffers.
-
-        Note: Lines that are not visible and kept in scrollback are not
-        reflown when the terminal buffer is resized horizontally.
       ]=],
       full_name = 'scrollback',
       redraw = { 'current_buffer' },
@@ -7311,8 +7345,8 @@ return {
         	message;  also for quickfix message (e.g., ":cn")
           s	don't give "search hit BOTTOM, continuing at TOP" or	*shm-s*
         	"search hit TOP, continuing at BOTTOM" messages; when using
-        	the search count do not show "W" after the count message (see
-        	S below)
+        	the search count do not show "W" before the count message
+        	(see |shm-S| below)
           t	truncate file message at the start if it is too long	*shm-t*
         	to fit on the command-line, "<" will appear in the left most
         	column; ignored in Ex mode
@@ -7331,9 +7365,14 @@ return {
         	items, for instance "scanning tags"
           q	do not show "recording @a" when recording a macro	*shm-q*
           F	don't give the file info when editing a file, like	*shm-F*
-        	`:silent` was used for the command
+        	`:silent` was used for the command; note that this also
+        	affects messages from 'autoread' reloading
           S	do not show search count message when searching, e.g.	*shm-S*
-        	"[1/5]"
+        	"[1/5]". When the "S" flag is not present (e.g. search count
+        	is shown), the "search hit BOTTOM, continuing at TOP" and
+        	"search hit TOP, continuing at BOTTOM" messages are only
+        	indicated by a "W" (Mnemonic: Wrapped) letter before the
+        	search count statistics.
 
         This gives you the opportunity to avoid that a change between buffers
         requires you to hit <Enter>, but still gives as useful a message as
@@ -7664,8 +7703,7 @@ return {
         highlighted with |hl-NonText|.
         You may also want to add "lastline" to the 'display' option to show as
         much of the last line as possible.
-        NOTE: only partly implemented, currently works with CTRL-E, CTRL-Y
-        and scrolling with the mouse.
+        NOTE: partly implemented, doesn't work yet for |gj| and |gk|.
       ]=],
       full_name = 'smoothscroll',
       pv_name = 'p_sms',
@@ -8019,8 +8057,7 @@ return {
         Some of the items from the 'statusline' format are different for
         'statuscolumn':
 
-        %l	line number of currently drawn line
-        %r	relative line number of currently drawn line
+        %l	line number column for currently drawn line
         %s	sign column for currently drawn line
         %C	fold column for currently drawn line
 
@@ -8047,11 +8084,8 @@ return {
         handler should be written with this in mind.
 
         Examples: >vim
-        	" Relative number with bar separator and click handlers:
-        	set statuscolumn=%@SignCb@%s%=%T%@NumCb@%r│%T
-
-        	" Right aligned relative cursor line number:
-        	let &stc='%=%{v:relnum?v:relnum:v:lnum} '
+        	" Line number with bar separator and click handlers:
+        	set statuscolumn=%@SignCb@%s%=%T%@NumCb@%l│%T
 
         	" Line numbers in hexadecimal for non wrapped part of lines:
         	let &stc='%=%{v:virtnum>0?"":printf("%x",v:lnum)} '
@@ -8405,6 +8439,8 @@ return {
         		"split" when both are present.
            uselast	If included, jump to the previously used window when
         		jumping to errors with |quickfix| commands.
+        If a window has 'winfixbuf' enabled, 'switchbuf' is currently not
+        applied to the split window.
       ]=],
       expand_cb = 'expand_set_switchbuf',
       full_name = 'switchbuf',
@@ -8529,7 +8565,7 @@ return {
         appear wrong in many places.
         The value must be more than 0 and less than 10000.
 
-        There are four main ways to use tabs in Vim:
+        There are five main ways to use tabs in Vim:
         1. Always keep 'tabstop' at 8, set 'softtabstop' and 'shiftwidth' to 4
            (or 3 or whatever you prefer) and use 'noexpandtab'.  Then Vim
            will use a mix of tabs and spaces, but typing <Tab> and <BS> will
@@ -8767,6 +8803,7 @@ return {
     {
       abbreviation = 'tenc',
       defaults = { if_true = '' },
+      enable_if = false,
       full_name = 'termencoding',
       scope = { 'global' },
       short_desc = N_('Terminal encoding'),
@@ -9301,6 +9338,7 @@ return {
 
         Level   Messages ~
         ----------------------------------------------------------------------
+        1	Enables Lua tracing (see above). Does not produce messages.
         2	When a file is ":source"'ed, or |shada| file is read or written.
         3	UI info, terminal capabilities.
         4	Shell commands.
@@ -9804,8 +9842,8 @@ return {
         will scroll 'window' minus two lines, with a minimum of one.
         When 'window' is equal to 'lines' minus one CTRL-F and CTRL-B scroll
         in a much smarter way, taking care of wrapping lines.
-        When resizing the Vim window, the value is smaller than 1 or more than
-        or equal to 'lines' it will be set to 'lines' minus 1.
+        When resizing the Vim window, and the value is smaller than 1 or more
+        than or equal to 'lines' it will be set to 'lines' minus 1.
         Note: Do not confuse this with the height of the Vim window, use
         'lines' for that.
       ]=],
@@ -9814,6 +9852,23 @@ return {
       short_desc = N_('nr of lines to scroll for CTRL-F and CTRL-B'),
       type = 'number',
       varname = 'p_window',
+    },
+    {
+      abbreviation = 'wfb',
+      defaults = { if_true = false },
+      desc = [=[
+        If enabled, the window and the buffer it is displaying are paired.
+        For example, attempting to change the buffer with |:edit| will fail.
+        Other commands which change a window's buffer such as |:cnext| will
+        also skip any window with 'winfixbuf' enabled.  However if an Ex
+        command has a "!" modifier, it can force switching buffers.
+      ]=],
+      full_name = 'winfixbuf',
+      pv_name = 'p_wfb',
+      redraw = { 'current_window' },
+      scope = { 'window' },
+      short_desc = N_('pin a window to a specific buffer'),
+      type = 'boolean',
     },
     {
       abbreviation = 'wfh',

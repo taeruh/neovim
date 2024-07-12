@@ -20,7 +20,7 @@ local M = {}
 --- end)
 --- ```
 ---
----@param items table Arbitrary items
+---@param items any[] Arbitrary items
 ---@param opts table Additional options
 ---     - prompt (string|nil)
 ---               Text of the prompt. Defaults to `Select one of:`
@@ -32,7 +32,7 @@ local M = {}
 ---               Plugins reimplementing `vim.ui.select` may wish to
 ---               use this to infer the structure or semantics of
 ---               `items`, or the context in which select() was called.
----@param on_choice function ((item|nil, idx|nil) -> ())
+---@param on_choice fun(item: any|nil, idx: integer|nil)
 ---               Called once the user made a choice.
 ---               `idx` is the 1-based index of `item` within `items`.
 ---               `nil` if the user aborted the dialog.
@@ -44,7 +44,7 @@ function M.select(items, opts, on_choice)
   opts = opts or {}
   local choices = { opts.prompt or 'Select one of:' }
   local format_item = opts.format_item or tostring
-  for i, item in pairs(items) do
+  for i, item in ipairs(items) do
     table.insert(choices, string.format('%d: %s', i, format_item(item)))
   end
   local choice = vim.fn.inputlist(choices)
@@ -66,7 +66,7 @@ end
 --- end)
 --- ```
 ---
----@param opts table Additional options. See |input()|
+---@param opts table? Additional options. See |input()|
 ---     - prompt (string|nil)
 ---               Text of the prompt
 ---     - default (string|nil)
@@ -87,6 +87,7 @@ end
 ---               `nil` if the user aborted the dialog.
 function M.input(opts, on_confirm)
   vim.validate({
+    opts = { opts, 'table', true },
     on_confirm = { on_confirm, 'function', false },
   })
 
@@ -113,15 +114,20 @@ end
 --- Examples:
 ---
 --- ```lua
+--- -- Asynchronous.
 --- vim.ui.open("https://neovim.io/")
 --- vim.ui.open("~/path/to/file")
---- vim.ui.open("$VIMRUNTIME")
+--- -- Synchronous (wait until the process exits).
+--- local cmd, err = vim.ui.open("$VIMRUNTIME")
+--- if cmd then
+---   cmd:wait()
+--- end
 --- ```
 ---
 ---@param path string Path or URL to open
 ---
----@return vim.SystemCompleted|nil # Command result, or nil if not found.
----@return string|nil # Error message on failure
+---@return vim.SystemObj|nil # Command object, or nil if not found.
+---@return nil|string # Error message on failure, or nil on success.
 ---
 ---@see |vim.system()|
 function M.open(path)
@@ -130,7 +136,7 @@ function M.open(path)
   })
   local is_uri = path:match('%w+:')
   if not is_uri then
-    path = vim.fn.expand(path)
+    path = vim.fs.normalize(path)
   end
 
   local cmd --- @type string[]
@@ -145,19 +151,40 @@ function M.open(path)
     end
   elseif vim.fn.executable('wslview') == 1 then
     cmd = { 'wslview', path }
+  elseif vim.fn.executable('explorer.exe') == 1 then
+    cmd = { 'explorer.exe', path }
   elseif vim.fn.executable('xdg-open') == 1 then
     cmd = { 'xdg-open', path }
   else
-    return nil, 'vim.ui.open: no handler found (tried: wslview, xdg-open)'
+    return nil, 'vim.ui.open: no handler found (tried: wslview, explorer.exe, xdg-open)'
   end
 
-  local rv = vim.system(cmd, { text = true, detach = true }):wait()
-  if rv.code ~= 0 then
-    local msg = ('vim.ui.open: command failed (%d): %s'):format(rv.code, vim.inspect(cmd))
-    return rv, msg
+  return vim.system(cmd, { text = true, detach = true }), nil
+end
+
+--- Gets the URL at cursor, if any.
+function M._get_url()
+  if vim.bo.filetype == 'markdown' then
+    local range = vim.api.nvim_win_get_cursor(0)
+    vim.treesitter.get_parser():parse(range)
+    -- marking the node as `markdown_inline` is required. Setting it to `markdown` does not
+    -- work.
+    local current_node = vim.treesitter.get_node { lang = 'markdown_inline' }
+    while current_node do
+      local type = current_node:type()
+      if type == 'inline_link' or type == 'image' then
+        local child = assert(current_node:named_child(1))
+        return vim.treesitter.get_node_text(child, 0)
+      end
+      current_node = current_node:parent()
+    end
   end
 
-  return rv, nil
+  local url = vim._with({ go = { isfname = vim.o.isfname .. ',@-@' } }, function()
+    return vim.fn.expand('<cfile>')
+  end)
+
+  return url
 end
 
 return M

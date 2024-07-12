@@ -4,7 +4,7 @@ local fn = vim.fn
 local M = {}
 
 --- @alias vim.filetype.mapfn fun(path:string,bufnr:integer, ...):string?, fun(b:integer)?
---- @alias vim.filetype.maptbl {[1]:string|vim.filetype.mapfn, [2]:{priority:integer}}
+--- @alias vim.filetype.maptbl [string|vim.filetype.mapfn, {priority:integer}]
 --- @alias vim.filetype.mapping.value string|vim.filetype.mapfn|vim.filetype.maptbl
 --- @alias vim.filetype.mapping table<string,vim.filetype.mapping.value>
 
@@ -14,7 +14,8 @@ local M = {}
 local function starsetf(ft, opts)
   return {
     function(path, bufnr)
-      local f = type(ft) == 'function' and ft(path, bufnr) or ft
+      -- Note: when `ft` is a function its return value may be nil.
+      local f = type(ft) ~= 'function' and ft or ft(path, bufnr)
       if not vim.g.ft_ignore_pat then
         return f
       end
@@ -189,6 +190,7 @@ local extension = {
   aidl = 'aidl',
   aml = 'aml',
   run = 'ampl',
+  g4 = 'antlr4',
   scpt = 'applescript',
   ino = 'arduino',
   pde = 'arduino',
@@ -202,6 +204,10 @@ local extension = {
     return 'aspvbs'
   end,
   asm = detect.asm,
+  s = detect.asm,
+  S = detect.asm,
+  a = detect.asm,
+  A = detect.asm,
   lst = detect.asm,
   mac = detect.asm,
   asn1 = 'asn',
@@ -231,11 +237,13 @@ local extension = {
   db = detect.bindzone,
   bicep = 'bicep',
   bicepparam = 'bicep',
+  zone = 'bindzone',
   bb = 'bitbake',
   bbappend = 'bitbake',
   bbclass = 'bitbake',
   bl = 'blank',
   blp = 'blueprint',
+  bp = 'bp',
   bsd = 'bsdl',
   bsdl = 'bsdl',
   bst = 'bst',
@@ -246,13 +254,16 @@ local extension = {
   bzl = 'bzl',
   bazel = 'bzl',
   BUILD = 'bzl',
+  mdh = 'c',
+  epro = 'c',
   qc = 'c',
   cabal = 'cabal',
   cairo = 'cairo',
   capnp = 'capnp',
   cdc = 'cdc',
   cdl = 'cdl',
-  toc = 'cdrtoc',
+  toc = detect_line1('\\contentsline', 'tex', 'cdrtoc'),
+  cedar = 'cedar',
   cfc = 'cf',
   cfm = 'cf',
   cfi = 'cf',
@@ -277,11 +288,11 @@ local extension = {
   cook = 'cook',
   cmake = 'cmake',
   cmod = 'cmod',
-  lib = 'cobol',
   cob = 'cobol',
   cbl = 'cobol',
   atg = 'coco',
   recipe = 'conaryrecipe',
+  ctags = 'conf',
   hook = function(path, bufnr)
     return M._getline(bufnr, 1) == '[Trigger]' and 'confini' or nil
   end,
@@ -335,6 +346,7 @@ local extension = {
   si = 'cuplsim',
   cyn = 'cynpp',
   cypher = 'cypher',
+  dfy = 'dafny',
   dart = 'dart',
   drt = 'dart',
   ds = 'datascript',
@@ -360,12 +372,14 @@ local extension = {
   gv = 'dot',
   drac = 'dracula',
   drc = 'dracula',
+  dsp = detect.dsp,
   dtd = 'dtd',
   d = detect.dtrace,
   dts = 'dts',
   dtsi = 'dts',
   dtso = 'dts',
   its = 'dts',
+  keymap = 'dts',
   dylan = 'dylan',
   intr = 'dylanintr',
   lid = 'dylanlid',
@@ -410,6 +424,7 @@ local extension = {
   fal = 'falcon',
   fan = 'fan',
   fwt = 'fan',
+  lib = 'faust',
   fnl = 'fennel',
   m4gl = 'fgl',
   ['4gl'] = 'fgl',
@@ -461,10 +476,12 @@ local extension = {
   gmi = 'gemtext',
   gemini = 'gemtext',
   gift = 'gift',
+  prettierignore = 'gitignore',
   gleam = 'gleam',
   glsl = 'glsl',
   gn = 'gn',
   gni = 'gn',
+  gnuplot = 'gnuplot',
   gpi = 'gnuplot',
   go = 'go',
   gp = 'gp',
@@ -502,7 +519,16 @@ local extension = {
   vc = 'hercules',
   heex = 'heex',
   hex = 'hex',
+  ['a43'] = 'hex',
+  ['a90'] = 'hex',
   ['h32'] = 'hex',
+  ['h80'] = 'hex',
+  ['h86'] = 'hex',
+  ihex = 'hex',
+  ihe = 'hex',
+  ihx = 'hex',
+  int = 'hex',
+  mcs = 'hex',
   hjson = 'hjson',
   m3u = 'hlsplaylist',
   m3u8 = 'hlsplaylist',
@@ -530,6 +556,7 @@ local extension = {
   inf = 'inform',
   INF = 'inform',
   ii = 'initng',
+  inko = 'inko',
   inp = detect.inp,
   ms = detect_seq(detect.nroff, 'xmath'),
   iss = 'iss',
@@ -554,6 +581,7 @@ local extension = {
   jsx = 'javascriptreact',
   clp = 'jess',
   jgr = 'jgraph',
+  jjdescription = 'jj',
   j73 = 'jovial',
   jov = 'jovial',
   jovial = 'jovial',
@@ -563,9 +591,17 @@ local extension = {
   json = 'json',
   jsonp = 'json',
   geojson = 'json',
+  mcmeta = 'json',
   webmanifest = 'json',
   ipynb = 'json',
+  ['jupyterlab-settings'] = 'json',
+  ['sublime-project'] = 'json',
+  ['sublime-settings'] = 'json',
+  ['sublime-workspace'] = 'json',
   ['json-patch'] = 'json',
+  bd = 'json',
+  bda = 'json',
+  xci = 'json',
   json5 = 'json5',
   jsonc = 'jsonc',
   jsonl = 'jsonl',
@@ -609,12 +645,13 @@ local extension = {
   el = 'lisp',
   lsp = 'lisp',
   asd = 'lisp',
+  stsg = 'lisp',
   lt = 'lite',
   lite = 'lite',
   livemd = 'livebook',
   lgt = 'logtalk',
   lotos = 'lotos',
-  lot = 'lotos',
+  lot = detect_line1('\\contentsline', 'tex', 'lotos'),
   lout = 'lout',
   lou = 'lout',
   ulpc = 'lpc',
@@ -625,6 +662,7 @@ local extension = {
   nse = 'lua',
   rockspec = 'lua',
   lua = 'lua',
+  tlu = 'lua',
   luau = 'luau',
   lrc = 'lyrics',
   m = detect.m,
@@ -638,18 +676,17 @@ local extension = {
   eml = 'mail',
   mk = 'make',
   mak = 'make',
-  dsp = 'make',
   page = 'mallard',
   map = 'map',
   mws = 'maple',
   mpl = 'maple',
   mv = 'maple',
-  mkdn = 'markdown',
-  md = 'markdown',
-  mdwn = 'markdown',
-  mkd = 'markdown',
-  markdown = 'markdown',
-  mdown = 'markdown',
+  mkdn = detect.markdown,
+  md = detect.markdown,
+  mdwn = detect.markdown,
+  mkd = detect.markdown,
+  markdown = detect.markdown,
+  mdown = detect.markdown,
   mhtml = 'mason',
   comp = 'mason',
   mason = 'mason',
@@ -677,6 +714,10 @@ local extension = {
   mmp = 'mmp',
   mms = detect.mms,
   DEF = 'modula2',
+  m3 = 'modula3',
+  i3 = 'modula3',
+  mg = 'modula3',
+  ig = 'modula3',
   lm3 = 'modula3',
   mojo = 'mojo',
   ['🔥'] = 'mojo', -- 🙄
@@ -744,12 +785,19 @@ local extension = {
   ora = 'ora',
   org = 'org',
   org_archive = 'org',
+  pandoc = 'pandoc',
+  pdk = 'pandoc',
+  pd = 'pandoc',
+  pdc = 'pandoc',
   pxsl = 'papp',
   papp = 'papp',
   pxml = 'papp',
   pas = 'pascal',
-  lpr = 'pascal',
+  lpr = detect_line1('<%?xml', 'xml', 'pascal'),
   dpr = 'pascal',
+  txtpb = 'pbtxt',
+  textproto = 'pbtxt',
+  textpb = 'pbtxt',
   pbtxt = 'pbtxt',
   g = 'pccts',
   pcmk = 'pcmk',
@@ -810,6 +858,7 @@ local extension = {
   psf = 'psf',
   psl = 'psl',
   pug = 'pug',
+  purs = 'purescript',
   arr = 'pyret',
   pxd = 'pyrex',
   pyx = 'pyrex',
@@ -837,6 +886,7 @@ local extension = {
   t6 = 'raku',
   p6 = 'raku',
   raml = 'raml',
+  rasi = 'rasi',
   rbs = 'rbs',
   rego = 'rego',
   rem = 'remind',
@@ -869,6 +919,7 @@ local extension = {
   Snw = 'rnoweb',
   robot = 'robot',
   resource = 'robot',
+  roc = 'roc',
   ron = 'ron',
   rsc = 'routeros',
   x = 'rpcgen',
@@ -911,11 +962,14 @@ local extension = {
   sexp = 'sexplib',
   bash = detect.bash,
   bats = detect.bash,
+  cygport = detect.bash,
   ebuild = detect.bash,
   eclass = detect.bash,
   env = detect.sh,
+  envrc = detect.sh,
   ksh = detect.ksh,
   sh = detect.sh,
+  mdd = 'sh',
   sieve = 'sieve',
   siv = 'sieve',
   sig = detect.sig,
@@ -933,6 +987,7 @@ local extension = {
   cdf = 'skill',
   sl = 'slang',
   ice = 'slice',
+  slint = 'slint',
   score = 'slrnsc',
   sol = 'solidity',
   smali = 'smali',
@@ -944,6 +999,7 @@ local extension = {
   smt = 'smith',
   smithy = 'smithy',
   sml = 'sml',
+  smk = 'snakemake',
   spt = 'snobol4',
   sno = 'snobol4',
   sln = 'solution',
@@ -983,6 +1039,8 @@ local extension = {
   mata = 'stata',
   ado = 'stata',
   stp = 'stp',
+  styl = 'stylus',
+  stylus = 'stylus',
   quark = 'supercollider',
   sface = 'surface',
   svelte = 'svelte',
@@ -1005,6 +1063,7 @@ local extension = {
   tk = 'tcl',
   jacl = 'tcl',
   tl = 'teal',
+  templ = 'templ',
   tmpl = 'template',
   ti = 'terminfo',
   dtx = 'tex',
@@ -1012,6 +1071,26 @@ local extension = {
   bbl = 'tex',
   latex = 'tex',
   sty = 'tex',
+  pgf = 'tex',
+  nlo = 'tex',
+  nls = 'tex',
+  thm = 'tex',
+  eps_tex = 'tex',
+  pygtex = 'tex',
+  pygstyle = 'tex',
+  clo = 'tex',
+  aux = 'tex',
+  brf = 'tex',
+  ind = 'tex',
+  lof = 'tex',
+  loe = 'tex',
+  nav = 'tex',
+  vrb = 'tex',
+  ins = 'tex',
+  tikz = 'tex',
+  bbx = 'tex',
+  cbx = 'tex',
+  beamer = 'tex',
   cls = detect.cls,
   texi = 'texinfo',
   txi = 'texinfo',
@@ -1035,6 +1114,7 @@ local extension = {
   mts = 'typescript',
   cts = 'typescript',
   tsx = 'typescriptreact',
+  tsp = 'typespec',
   uc = 'uc',
   uit = 'uil',
   uil = 'uil',
@@ -1062,6 +1142,7 @@ local extension = {
   vdmrt = 'vdmrt',
   vdmsl = 'vdmsl',
   vdm = 'vdmsl',
+  vto = 'vento',
   vr = 'vera',
   vri = 'vera',
   vrh = 'vera',
@@ -1088,6 +1169,8 @@ local extension = {
   wbt = 'winbatch',
   wit = 'wit',
   wml = 'wml',
+  wsf = 'wsh',
+  wsc = 'wsh',
   wsml = 'wsml',
   ad = 'xdefaults',
   xhtml = 'xhtml',
@@ -1110,6 +1193,14 @@ local extension = {
   csproj = 'xml',
   wpl = 'xml',
   xmi = 'xml',
+  xpr = 'xml',
+  xpfm = 'xml',
+  spfm = 'xml',
+  bxml = 'xml',
+  xcu = 'xml',
+  xlb = 'xml',
+  xlc = 'xml',
+  xba = 'xml',
   xpm = detect_line1('XPM2', 'xpm2', 'xpm'),
   xpm2 = 'xpm2',
   xqy = 'xquery',
@@ -1127,6 +1218,7 @@ local extension = {
   yml = 'yaml',
   yaml = 'yaml',
   eyaml = 'yaml',
+  mplstyle = 'yaml',
   yang = 'yang',
   yuck = 'yuck',
   z8a = 'z8a',
@@ -1136,6 +1228,8 @@ local extension = {
   zut = 'zimbutempl',
   zs = 'zserio',
   zsh = 'zsh',
+  zunit = 'zsh',
+  ['zsh-theme'] = 'zsh',
   vala = 'vala',
   web = detect.web,
   pl = detect.pl,
@@ -1229,7 +1323,12 @@ local filename = {
   ['/etc/default/cdrdao'] = 'cdrdaoconf',
   ['/etc/defaults/cdrdao'] = 'cdrdaoconf',
   ['cfengine.conf'] = 'cfengine',
+  cgdbrc = 'cgdbrc',
+  ['init.trans'] = 'clojure',
+  ['.trans'] = 'clojure',
   ['CMakeLists.txt'] = 'cmake',
+  ['CMakeCache.txt'] = 'cmakecache',
+  ['.cling_history'] = 'cpp',
   ['.alias'] = detect.csh,
   ['.cshrc'] = detect.csh,
   ['.login'] = detect.csh,
@@ -1237,6 +1336,12 @@ local filename = {
   ['csh.login'] = detect.csh,
   ['csh.logout'] = detect.csh,
   ['auto.master'] = 'conf',
+  ['texdoc.cnf'] = 'conf',
+  ['.x11vncrc'] = 'conf',
+  ['.chktexrc'] = 'conf',
+  ['.ripgreprc'] = 'conf',
+  ripgreprc = 'conf',
+  ['.mbsyncrc'] = 'conf',
   ['configure.in'] = 'config',
   ['configure.ac'] = 'config',
   crontab = 'crontab',
@@ -1262,12 +1367,31 @@ local filename = {
   npmrc = 'dosini',
   ['/etc/yum.conf'] = 'dosini',
   ['.npmrc'] = 'dosini',
-  ['/etc/pacman.conf'] = 'confini',
+  ['pip.conf'] = 'dosini',
+  ['setup.cfg'] = 'dosini',
+  ['pudb.cfg'] = 'dosini',
+  ['.coveragerc'] = 'dosini',
+  ['.pypirc'] = 'dosini',
+  ['.pylintrc'] = 'dosini',
+  ['pylintrc'] = 'dosini',
+  ['.replyrc'] = 'dosini',
+  ['.gitlint'] = 'dosini',
+  ['.oelint.cfg'] = 'dosini',
+  ['psprint.conf'] = 'dosini',
+  sofficerc = 'dosini',
+  ['mimeapps.list'] = 'dosini',
+  ['.wakatime.cfg'] = 'dosini',
+  ['nfs.conf'] = 'dosini',
+  ['nfsmount.conf'] = 'dosini',
+  ['.notmuch-config'] = 'dosini',
+  ['pacman.conf'] = 'confini',
+  ['paru.conf'] = 'confini',
   ['mpv.conf'] = 'confini',
   dune = 'dune',
   jbuild = 'dune',
   ['dune-workspace'] = 'dune',
   ['dune-project'] = 'dune',
+  Earthfile = 'earthfile',
   ['.editorconfig'] = 'editorconfig',
   ['elinks.conf'] = 'elinks',
   ['mix.lock'] = 'elixir',
@@ -1302,7 +1426,7 @@ local filename = {
   ['.gnashpluginrc'] = 'gnash',
   gnashpluginrc = 'gnash',
   gnashrc = 'gnash',
-  ['.gnuplot'] = 'gnuplot',
+  ['.gnuplot_history'] = 'gnuplot',
   ['go.sum'] = 'gosum',
   ['go.work.sum'] = 'gosum',
   ['go.work'] = 'gowork',
@@ -1328,6 +1452,10 @@ local filename = {
   ['/etc/host.conf'] = 'hostconf',
   ['/etc/hosts.allow'] = 'hostsaccess',
   ['/etc/hosts.deny'] = 'hostsaccess',
+  ['hyprland.conf'] = 'hyprlang',
+  ['hyprpaper.conf'] = 'hyprlang',
+  ['hypridle.conf'] = 'hyprlang',
+  ['hyprlock.conf'] = 'hyprlang',
   ['/.icewm/menu'] = 'icemenu',
   ['.indent.pro'] = 'indent',
   indentrc = 'indent',
@@ -1335,21 +1463,29 @@ local filename = {
   ['ipf.conf'] = 'ipfilter',
   ['ipf6.conf'] = 'ipfilter',
   ['ipf.rules'] = 'ipfilter',
+  ['.node_repl_history'] = 'javascript',
   ['Pipfile.lock'] = 'json',
   ['.firebaserc'] = 'json',
   ['.prettierrc'] = 'json',
   ['.stylelintrc'] = 'json',
+  ['.lintstagedrc'] = 'json',
+  ['flake.lock'] = 'json',
   ['.babelrc'] = 'jsonc',
   ['.eslintrc'] = 'jsonc',
   ['.hintrc'] = 'jsonc',
+  ['.jscsrc'] = 'jsonc',
   ['.jsfmtrc'] = 'jsonc',
   ['.jshintrc'] = 'jsonc',
   ['.luaurc'] = 'jsonc',
   ['.swrc'] = 'jsonc',
+  ['.vsconfig'] = 'jsonc',
   ['.justfile'] = 'just',
   Kconfig = 'kconfig',
   ['Kconfig.debug'] = 'kconfig',
   ['Config.in'] = 'kconfig',
+  ['ldaprc'] = 'ldapconf',
+  ['.ldaprc'] = 'ldapconf',
+  ['ldap.conf'] = 'ldapconf',
   ['lftp.conf'] = 'lftp',
   ['.lftprc'] = 'lftp',
   ['/.libao'] = 'libao',
@@ -1365,10 +1501,14 @@ local filename = {
   ['.lsl'] = detect.lsl,
   ['.busted'] = 'lua',
   ['.luacheckrc'] = 'lua',
+  ['.lua_history'] = 'lua',
+  ['config.ld'] = 'lua',
+  ['rock_manifest'] = 'lua',
   ['lynx.cfg'] = 'lynx',
   ['m3overrides'] = 'm3build',
   ['m3makefile'] = 'm3build',
   ['cm3.cfg'] = 'm3quake',
+  ['.m4_history'] = 'm4',
   ['.followup'] = 'mail',
   ['.article'] = 'mail',
   ['.letter'] = 'mail',
@@ -1376,6 +1516,7 @@ local filename = {
   ['/etc/mail/aliases'] = 'mailaliases',
   mailcap = 'mailcap',
   ['.mailcap'] = 'mailcap',
+  Kbuild = 'make',
   ['/etc/man.conf'] = 'manconf',
   ['man.config'] = 'manconf',
   ['maxima-init.mac'] = 'maxima',
@@ -1389,6 +1530,8 @@ local filename = {
   ['mplayer.conf'] = 'mplayerconf',
   mrxvtrc = 'mrxvtrc',
   ['.mrxvtrc'] = 'mrxvtrc',
+  ['.msmtprc'] = 'msmtp',
+  ['.mysql_history'] = 'mysql',
   ['/etc/nanorc'] = 'nanorc',
   Neomuttrc = 'neomuttrc',
   ['.netrc'] = 'netrc',
@@ -1397,6 +1540,7 @@ local filename = {
   ['.octaverc'] = 'octave',
   octaverc = 'octave',
   ['octave.conf'] = 'octave',
+  ['.ondirrc'] = 'ondir',
   opam = 'opam',
   ['pacman.log'] = 'pacmanlog',
   ['/etc/pam.conf'] = 'pamconf',
@@ -1441,8 +1585,11 @@ local filename = {
   ['MANIFEST.in'] = 'pymanifest',
   ['.pythonstartup'] = 'python',
   ['.pythonrc'] = 'python',
+  ['.python_history'] = 'python',
+  ['.jline-jython.history'] = 'python',
   SConstruct = 'python',
   qmldir = 'qmldir',
+  ['.Rhistory'] = 'r',
   ['.Rprofile'] = 'r',
   Rprofile = 'r',
   ['Rprofile.site'] = 'r',
@@ -1452,12 +1599,16 @@ local filename = {
   ['.inputrc'] = 'readline',
   ['.reminders'] = 'remind',
   ['requirements.txt'] = 'requirements',
+  ['constraints.txt'] = 'requirements',
+  ['requirements.in'] = 'requirements',
   ['resolv.conf'] = 'resolv',
   ['robots.txt'] = 'robots',
   Gemfile = 'ruby',
   Puppetfile = 'ruby',
   ['.irbrc'] = 'ruby',
   irbrc = 'ruby',
+  ['.irb_history'] = 'ruby',
+  irb_history = 'ruby',
   Vagrantfile = 'ruby',
   ['smb.conf'] = 'samba',
   screenrc = 'screen',
@@ -1467,10 +1618,15 @@ local filename = {
   ['/etc/services'] = 'services',
   ['/etc/serial.conf'] = 'setserial',
   ['/etc/udev/cdsymlinks.conf'] = 'sh',
+  ['.ash_history'] = 'sh',
+  ['makepkg.conf'] = 'sh',
+  ['.makepkg.conf'] = 'sh',
+  ['user-dirs.dirs'] = 'sh',
+  ['user-dirs.defaults'] = 'sh',
+  ['.xprofile'] = 'sh',
   ['bash.bashrc'] = detect.bash,
   bashrc = detect.bash,
   ['.bashrc'] = detect.bash,
-  ['.env'] = detect.sh,
   ['.kshrc'] = detect.ksh,
   ['.profile'] = detect.sh,
   ['/etc/profile'] = detect.sh,
@@ -1484,6 +1640,8 @@ local filename = {
   ['/etc/slp.spi'] = 'slpspi',
   ['.slrnrc'] = 'slrnrc',
   ['sendmail.cf'] = 'sm',
+  Snakefile = 'snakemake',
+  ['.sqlite_history'] = 'sql',
   ['squid.conf'] = 'squid',
   ['ssh_config'] = 'sshconfig',
   ['sshd_config'] = 'sshdconfig',
@@ -1496,10 +1654,13 @@ local filename = {
   ['undo.data'] = 'taskdata',
   ['.tclshrc'] = 'tcl',
   ['.wishrc'] = 'tcl',
+  ['.tclsh-history'] = 'tcl',
   ['tclsh.rc'] = 'tcl',
+  ['.xsctcmdhistory'] = 'tcl',
+  ['.xsdbcmdhistory'] = 'tcl',
   ['texmf.cnf'] = 'texmf',
   COPYING = 'text',
-  README = 'text',
+  README = detect_seq(detect.haredoc, 'text'),
   LICENSE = 'text',
   AUTHORS = 'text',
   tfrc = 'tf',
@@ -1513,13 +1674,17 @@ local filename = {
   ['Gopkg.lock'] = 'toml',
   ['/.cargo/credentials'] = 'toml',
   ['Cargo.lock'] = 'toml',
+  ['.black'] = 'toml',
+  black = detect_line1('tool%.black', 'toml', nil),
   ['trustees.conf'] = 'trustees',
+  ['.ts_node_repl_history'] = 'typescript',
   ['/etc/udev/udev.conf'] = 'udevconf',
   ['/etc/updatedb.conf'] = 'updatedb',
   ['fdrupstream.log'] = 'upstreamlog',
   vgrindefs = 'vgrindefs',
   ['.exrc'] = 'vim',
   ['_exrc'] = 'vim',
+  ['.netrwhist'] = 'vim',
   ['_viminfo'] = 'viminfo',
   ['.viminfo'] = 'viminfo',
   ['.wgetrc'] = 'wget',
@@ -1541,15 +1706,20 @@ local filename = {
   fglrxrc = 'xml',
   ['/etc/blkid.tab'] = 'xml',
   ['/etc/blkid.tab.old'] = 'xml',
+  ['fonts.conf'] = 'xml',
   ['.clangd'] = 'yaml',
   ['.clang-format'] = 'yaml',
   ['.clang-tidy'] = 'yaml',
+  ['yarn.lock'] = 'yaml',
+  matplotlibrc = 'yaml',
+  zathurarc = 'zathurarc',
   ['/etc/zprofile'] = 'zsh',
   ['.zlogin'] = 'zsh',
   ['.zlogout'] = 'zsh',
   ['.zshrc'] = 'zsh',
   ['.zprofile'] = 'zsh',
   ['.zcompdump'] = 'zsh',
+  ['.zsh_history'] = 'zsh',
   ['.zshenv'] = 'zsh',
   ['.zfbfmarks'] = 'zsh',
   -- END FILENAME
@@ -1588,8 +1758,6 @@ local pattern = {
   ['.*asterisk/.*%.conf.*'] = starsetf('asterisk'),
   ['.*asterisk.*/.*voicemail%.conf.*'] = starsetf('asteriskvm'),
   ['.*/%.aptitude/config'] = 'aptconf',
-  ['.*%.[aA]'] = detect.asm,
-  ['.*%.[sS]'] = detect.asm,
   ['[mM]akefile%.am'] = 'automake',
   ['.*/bind/db%..*'] = starsetf('bindzone'),
   ['.*/named/db%..*'] = starsetf('bindzone'),
@@ -1599,9 +1767,8 @@ local pattern = {
   ['.*%.blade%.php'] = 'blade',
   ['bzr_log%..*'] = 'bzr',
   ['.*enlightenment/.*%.cfg'] = 'c',
-  ['${HOME}/cabal%.config'] = 'cabalconfig',
-  ['${HOME}/%.config/cabal/config'] = 'cabalconfig',
-  ['${XDG_CONFIG_HOME}/cabal/config'] = 'cabalconfig',
+  ['.*/%.cabal/config'] = 'cabalconfig',
+  ['.*/cabal/config'] = 'cabalconfig',
   ['cabal%.project%..*'] = starsetf('cabalproject'),
   ['.*/%.calendar/.*'] = starsetf('calendar'),
   ['.*/share/calendar/.*/calendar%..*'] = starsetf('calendar'),
@@ -1619,6 +1786,7 @@ local pattern = {
   },
   ['[cC]hange[lL]og.*'] = starsetf(detect.changelog),
   ['.*%.%.ch'] = 'chill',
+  ['.*/etc/translate%-shell'] = 'clojure',
   ['.*%.cmake%.in'] = 'cmake',
   -- */cmus/rc and */.cmus/rc
   ['.*/%.?cmus/rc'] = 'cmusrc',
@@ -1645,16 +1813,18 @@ local pattern = {
   ['.*/etc/apt/sources%.list%.d/.*%.list'] = 'debsources',
   ['.*/etc/apt/sources%.list'] = 'debsources',
   ['.*/etc/apt/sources%.list%.d/.*%.sources'] = 'deb822sources',
-  ['.*%.directory'] = 'desktop',
-  ['.*%.desktop'] = 'desktop',
   ['dictd.*%.conf'] = 'dictdconf',
   ['.*/etc/DIR_COLORS'] = 'dircolors',
   ['.*/etc/dnsmasq%.conf'] = 'dnsmasq',
   ['php%.ini%-.*'] = 'dosini',
   ['.*/%.aws/config'] = 'confini',
   ['.*/%.aws/credentials'] = 'confini',
-  ['.*/etc/pacman%.conf'] = 'confini',
   ['.*/etc/yum%.conf'] = 'dosini',
+  ['.*/lxqt/.*%.conf'] = 'dosini',
+  ['.*/screengrab/.*%.conf'] = 'dosini',
+  ['.*/bpython/config'] = 'dosini',
+  ['.*/mypy/config'] = 'dosini',
+  ['.*/flatpak/repo/config'] = 'dosini',
   ['.*lvs'] = 'dracula',
   ['.*lpe'] = 'dracula',
   ['.*/dtrace/.*%.d'] = 'dtrace',
@@ -1745,12 +1915,14 @@ local pattern = {
   ['.*%.[Ss][Uu][Bb]'] = 'krl',
   ['lilo%.conf.*'] = starsetf('lilo'),
   ['.*/etc/logcheck/.*%.d.*/.*'] = starsetf('logcheck'),
+  ['.*/ldscripts/.*'] = 'ld',
   ['.*lftp/rc'] = 'lftp',
   ['.*/%.libao'] = 'libao',
   ['.*/etc/libao%.conf'] = 'libao',
   ['.*/etc/.*limits%.conf'] = 'limits',
   ['.*/etc/limits'] = 'limits',
   ['.*/etc/.*limits%.d/.*%.conf'] = 'limits',
+  ['.*/supertux2/config'] = 'lisp',
   ['.*/LiteStep/.*/.*%.rc'] = 'litestep',
   ['.*/etc/login%.access'] = 'loginaccess',
   ['.*/etc/login%.defs'] = 'logindefs',
@@ -1858,7 +2030,6 @@ local pattern = {
       return 'modconf'
     end
   end),
-  ['.*%.[mi][3g]'] = 'modula3',
   ['Muttrc'] = 'muttrc',
   ['Muttngrc'] = 'muttrc',
   ['.*/etc/Muttrc%.d/.*'] = starsetf('muttrc'),
@@ -1889,6 +2060,7 @@ local pattern = {
   ['.*%.[1-9]'] = detect.nroff,
   ['.*%.ml%.cppo'] = 'ocaml',
   ['.*%.mli%.cppo'] = 'ocaml',
+  ['.*/octave/history'] = 'octave',
   ['.*%.opam%.template'] = 'opam',
   ['.*/openvpn/.*/.*%.conf'] = 'openvpn',
   ['.*%.[Oo][Pp][Ll]'] = 'opl',
@@ -1918,6 +2090,9 @@ local pattern = {
   ['.*/queries/.*%.scm'] = 'query', -- treesitter queries (Neovim only)
   ['.*,v'] = 'rcs',
   ['%.reminders.*'] = starsetf('remind'),
+  ['.*%-requirements%.txt'] = 'requirements',
+  ['requirements/.*%.txt'] = 'requirements',
+  ['requires/.*%.txt'] = 'requirements',
   ['[rR]akefile.*'] = starsetf('ruby'),
   ['[rR]antfile'] = 'ruby',
   ['[rR]akefile'] = 'ruby',
@@ -1927,7 +2102,9 @@ local pattern = {
   ['.*/etc/services'] = 'services',
   ['.*/etc/serial%.conf'] = 'setserial',
   ['.*/etc/udev/cdsymlinks%.conf'] = 'sh',
+  ['.*/neofetch/config%.conf'] = 'sh',
   ['%.bash[_%-]aliases'] = detect.bash,
+  ['%.bash[_%-]history'] = detect.bash,
   ['%.bash[_%-]logout'] = detect.bash,
   ['%.bash[_%-]profile'] = detect.bash,
   ['%.kshrc.*'] = detect.ksh,
@@ -1979,6 +2156,7 @@ local pattern = {
   ['.*termcap.*'] = starsetf(function(path, bufnr)
     return require('vim.filetype.detect').printcap('term')
   end),
+  ['.*/tex/latex/.*%.cfg'] = 'tex',
   ['.*%.t%.html'] = 'tilde',
   ['%.?tmux.*%.conf'] = 'tmux',
   ['%.?tmux.*%.conf.*'] = { 'tmux', { priority = -1 } },
@@ -1996,8 +2174,8 @@ local pattern = {
   ['.*/%.init/.*%.conf'] = 'upstart',
   ['.*/usr/share/upstart/.*%.override'] = 'upstart',
   ['.*%.[Ll][Oo][Gg]'] = detect.log,
+  ['.*/etc/config/.*'] = starsetf(detect.uci),
   ['.*%.vhdl_[0-9].*'] = starsetf('vhdl'),
-  ['.*%.ws[fc]'] = 'wsh',
   ['.*/Xresources/.*'] = starsetf('xdefaults'),
   ['.*/app%-defaults/.*'] = starsetf('xdefaults'),
   ['.*/etc/xinetd%.conf'] = 'xinetd',
@@ -2022,6 +2200,7 @@ local pattern = {
   -- Increase priority to run before the pattern below
   ['XF86Config%-4.*'] = starsetf(detect.xfree86_v4, { priority = -math.huge + 1 }),
   ['XF86Config.*'] = starsetf(detect.xfree86_v3),
+  ['.*/%.bundle/config'] = 'yaml',
   ['%.zcompdump.*'] = starsetf('zsh'),
   -- .zlog* and zlog*
   ['%.?zlog.*'] = starsetf('zsh'),
@@ -2029,7 +2208,7 @@ local pattern = {
   ['%.?zsh.*'] = starsetf('zsh'),
   -- Ignored extension
   ['.*~'] = function(path, bufnr)
-    local short = path:gsub('~$', '', 1)
+    local short = path:gsub('~+$', '', 1)
     if path ~= short and short ~= '' then
       return M.match({ buf = bufnr, filename = fn.fnameescape(short) })
     end
@@ -2082,6 +2261,7 @@ local function normalize_path(path, as_pattern)
 end
 
 --- @class vim.filetype.add.filetypes
+--- @inlinedoc
 --- @field pattern? vim.filetype.mapping
 --- @field extension? vim.filetype.mapping
 --- @field filename? vim.filetype.mapping
@@ -2156,7 +2336,6 @@ end
 --- vim.filetype.add {
 ---   pattern = {
 ---     ['.*'] = {
----       priority = -math.huge,
 ---       function(path, bufnr)
 ---         local content = vim.api.nvim_buf_get_lines(bufnr, 0, 1, false)[1] or ''
 ---         if vim.regex([[^#!.*\\<mine\\>]]):match_str(content) ~= nil then
@@ -2165,12 +2344,13 @@ end
 ---           return 'drawing'
 ---         end
 ---       end,
+---       { priority = -math.huge },
 ---     },
 ---   },
 --- }
 --- ```
 ---
----@param filetypes vim.filetype.add.filetypes (table) A table containing new filetype maps (see example).
+---@param filetypes vim.filetype.add.filetypes A table containing new filetype maps (see example).
 function M.add(filetypes)
   for k, v in pairs(filetypes.extension or {}) do
     extension[k] = v
@@ -2272,16 +2452,31 @@ local function match_pattern(name, path, tail, pat)
 end
 
 --- @class vim.filetype.match.args
+--- @inlinedoc
+---
+--- Buffer number to use for matching. Mutually exclusive with {contents}
 --- @field buf? integer
+---
+--- Filename to use for matching. When {buf} is given,
+--- defaults to the filename of the given buffer number. The
+--- file need not actually exist in the filesystem. When used
+--- without {buf} only the name of the file is used for
+--- filetype matching. This may result in failure to detect
+--- the filetype in cases where the filename alone is not
+--- enough to disambiguate the filetype.
 --- @field filename? string
+---
+--- An array of lines representing file contents to use for
+--- matching. Can be used with {filename}. Mutually exclusive
+--- with {buf}.
 --- @field contents? string[]
 
 --- Perform filetype detection.
 ---
 --- The filetype can be detected using one of three methods:
----  1. Using an existing buffer
----  2. Using only a file name
----  3. Using only file contents
+--- 1. Using an existing buffer
+--- 2. Using only a file name
+--- 3. Using only file contents
 ---
 --- Of these, option 1 provides the most accurate result as it uses both the buffer's filename and
 --- (optionally) the buffer contents. Options 2 and 3 can be used without an existing buffer, but
@@ -2305,20 +2500,8 @@ end
 --- vim.filetype.match({ contents = {'#!/usr/bin/env bash'} })
 --- ```
 ---
----@param args vim.filetype.match.args (table) Table specifying which matching strategy to use.
+---@param args vim.filetype.match.args Table specifying which matching strategy to use.
 ---                 Accepted keys are:
----                   * buf (number): Buffer number to use for matching. Mutually exclusive with
----                                   {contents}
----                   * filename (string): Filename to use for matching. When {buf} is given,
----                                        defaults to the filename of the given buffer number. The
----                                        file need not actually exist in the filesystem. When used
----                                        without {buf} only the name of the file is used for
----                                        filetype matching. This may result in failure to detect
----                                        the filetype in cases where the filename alone is not
----                                        enough to disambiguate the filetype.
----                   * contents (table): An array of lines representing file contents to use for
----                                       matching. Can be used with {filename}. Mutually exclusive
----                                       with {buf}.
 ---@return string|nil # If a match was found, the matched filetype.
 ---@return function|nil # A function that modifies buffer state when called (for example, to set some
 ---                     filetype specific buffer variables). The function accepts a buffer number as
@@ -2381,7 +2564,9 @@ function M.match(args)
     end
 
     -- Next, check file extension
-    local ext = fn.fnamemodify(name, ':e')
+    -- Don't use fnamemodify() with :e modifier here,
+    -- as that's empty when there is only an extension.
+    local ext = name:match('%.([^.]-)$') or ''
     ft, on_detect = dispatch(extension[ext], path, bufnr)
     if ft then
       return ft, on_detect
@@ -2415,20 +2600,24 @@ function M.match(args)
         contents = M._getlines(bufnr)
       end
     end
-    -- If name is nil, catch any errors from the contents filetype detection function.
-    -- If the function tries to use the filename that is nil then it will fail,
-    -- but this enables checks which do not need a filename to still work.
-    local ok
-    ok, ft, on_detect = pcall(
-      require('vim.filetype.detect').match_contents,
-      contents,
-      name,
-      function(ext)
-        return dispatch(extension[ext], name, bufnr)
+
+    -- Match based solely on content only if there is any content (for performance)
+    if not (#contents == 1 and contents[1] == '') then
+      -- If name is nil, catch any errors from the contents filetype detection function.
+      -- If the function tries to use the filename that is nil then it will fail,
+      -- but this enables checks which do not need a filename to still work.
+      local ok
+      ok, ft, on_detect = pcall(
+        require('vim.filetype.detect').match_contents,
+        contents,
+        name,
+        function(ext)
+          return dispatch(extension[ext], name, bufnr)
+        end
+      )
+      if ok then
+        return ft, on_detect
       end
-    )
-    if ok then
-      return ft, on_detect
     end
   end
 end

@@ -28,6 +28,7 @@
 #include "nvim/digraph.h"
 #include "nvim/drawscreen.h"
 #include "nvim/edit.h"
+#include "nvim/errors.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/vars.h"
@@ -132,7 +133,8 @@ typedef struct {
   int did_wild_list;                    // did wild_list() recently
   int wim_index;                        // index in wim_flags[]
   int save_msg_scroll;
-  int save_State;                 // remember State when called
+  int save_State;                       // remember State when called
+  int prev_cmdpos;
   char *save_p_icm;
   int some_key_typed;                   // one of the keys was typed
   // mouse drag and release events are ignored, unless they are
@@ -221,6 +223,12 @@ static int cmdpreview_ns = 0;
 
 static const char e_active_window_or_buffer_changed_or_deleted[]
   = N_("E199: Active window or buffer changed or deleted");
+
+static void trigger_cmd_autocmd(int typechar, event_T evt)
+{
+  char typestr[2] = { (char)typechar, NUL };
+  apply_autocmds(evt, typestr, typestr, false, curbuf);
+}
 
 static void save_viewstate(win_T *wp, viewstate_T *vs)
   FUNC_ATTR_NONNULL_ALL
@@ -470,7 +478,7 @@ static void may_do_incsearch_highlighting(int firstc, int count, incsearch_state
       .sa_tm = &tm,
     };
     found = do_search(NULL, firstc == ':' ? '/' : firstc, search_delim,
-                      ccline.cmdbuff + skiplen, count,
+                      ccline.cmdbuff + skiplen, (size_t)patlen, count,
                       search_flags, &sia);
     ccline.cmdbuff[skiplen + patlen] = next_char;
     emsg_off--;
@@ -510,7 +518,7 @@ static void may_do_incsearch_highlighting(int firstc, int count, incsearch_state
 
     s->match_start = curwin->w_cursor;
     set_search_match(&curwin->w_cursor);
-    validate_cursor();
+    validate_cursor(curwin);
     end_pos = curwin->w_cursor;
     s->match_end = end_pos;
     curwin->w_cursor = save_pos;
@@ -530,7 +538,7 @@ static void may_do_incsearch_highlighting(int firstc, int count, incsearch_state
     ccline.cmdbuff[skiplen + patlen] = next_char;
   }
 
-  validate_cursor();
+  validate_cursor(curwin);
 
   // May redraw the status line to show the cursor position.
   if (p_ru && (curwin->w_status_height > 0 || global_stl_height() > 0)) {
@@ -626,7 +634,7 @@ static void finish_incsearch_highlighting(bool gotesc, incsearch_state_T *s,
 
   magic_overruled = s->magic_overruled_save;
 
-  validate_cursor();          // needed for TAB
+  validate_cursor(curwin);          // needed for TAB
   status_redraw_all();
   redraw_all_later(UPD_SOME_VALID);
   if (call_update_screen) {
@@ -683,6 +691,7 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
     .indent = indent,
     .save_msg_scroll = msg_scroll,
     .save_State = State,
+    .prev_cmdpos = -1,
     .ignore_drag_release = true,
   };
   CommandLineState *s = &state;
@@ -767,7 +776,7 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
   }
 
   setmouse();
-  ui_cursor_shape();               // may show different cursor shape
+  setcursor();
 
   TryState tstate;
   Error err = ERROR_INIT;
@@ -884,11 +893,12 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
         && ccline.cmdlen
         && s->firstc != NUL
         && (s->some_key_typed || s->histype == HIST_SEARCH)) {
-      add_to_history(s->histype, ccline.cmdbuff, true,
+      size_t cmdbufflen = strlen(ccline.cmdbuff);
+      add_to_history(s->histype, ccline.cmdbuff, cmdbufflen, true,
                      s->histype == HIST_SEARCH ? s->firstc : NUL);
       if (s->firstc == ':') {
         xfree(new_last_cmdline);
-        new_last_cmdline = xstrdup(ccline.cmdbuff);
+        new_last_cmdline = xstrnsave(ccline.cmdbuff, cmdbufflen);
       }
     }
 
@@ -919,7 +929,7 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
     need_wait_return = false;
   }
 
-  set_string_option_direct(kOptInccommand, s->save_p_icm, 0, SID_NONE);
+  set_option_direct(kOptInccommand, CSTR_AS_OPTVAL(s->save_p_icm), 0, SID_NONE);
   State = s->save_State;
   if (cmdpreview != save_cmdpreview) {
     cmdpreview = save_cmdpreview;  // restore preview state
@@ -927,7 +937,6 @@ static uint8_t *command_line_enter(int firstc, int count, int indent, bool clear
   }
   may_trigger_modechanged();
   setmouse();
-  ui_cursor_shape();            // may show different cursor shape
   sb_text_end_cmdline();
 
 theend:
@@ -1168,6 +1177,7 @@ static int command_line_execute(VimState *state, int key)
     return -1;  // get another key
   }
 
+  disptick_T display_tick_saved = display_tick;
   CommandLineState *s = (CommandLineState *)state;
   s->c = key;
 
@@ -1178,6 +1188,10 @@ static int command_line_execute(VimState *state, int key)
       do_cmdline(NULL, getcmdkeycmd, NULL, DOCMD_NOWAIT);
     } else {
       map_execute_lua(false);
+    }
+    // Re-apply 'incsearch' highlighting in case it was cleared.
+    if (display_tick > display_tick_saved && s->is_state.did_incsearch) {
+      may_do_incsearch_highlighting(s->firstc, s->count, &s->is_state);
     }
 
     // nvim_select_popupmenu_item() can be called from the handling of
@@ -1447,7 +1461,7 @@ static int may_do_command_line_next_incsearch(int firstc, int count, incsearch_s
   pat[patlen] = NUL;
   int found = searchit(curwin, curbuf, &t, NULL,
                        next_match ? FORWARD : BACKWARD,
-                       pat, count, search_flags,
+                       pat, (size_t)patlen, count, search_flags,
                        RE_SEARCH, NULL);
   emsg_off--;
   pat[patlen] = save;
@@ -1483,7 +1497,7 @@ static int may_do_command_line_next_incsearch(int firstc, int count, incsearch_s
     curwin->w_cursor = s->match_start;
     changed_cline_bef_curs(curwin);
     update_topline(curwin);
-    validate_cursor();
+    validate_cursor(curwin);
     highlight_match = true;
     save_viewstate(curwin, &s->old_viewstate);
     redraw_later(curwin, UPD_NOT_VALID);
@@ -1510,10 +1524,8 @@ static int command_line_erase_chars(CommandLineState *s)
   if (s->c == K_DEL && ccline.cmdpos != ccline.cmdlen) {
     ccline.cmdpos++;
   }
-
   if (s->c == K_DEL) {
-    ccline.cmdpos += mb_off_next(ccline.cmdbuff,
-                                 ccline.cmdbuff + ccline.cmdpos);
+    ccline.cmdpos += mb_off_next(ccline.cmdbuff, ccline.cmdbuff + ccline.cmdpos);
   }
 
   if (ccline.cmdpos > 0) {
@@ -1966,7 +1978,7 @@ static int command_line_handle_key(CommandLineState *s)
     return command_line_not_changed(s);                 // Ignore mouse
 
   case K_MIDDLEMOUSE:
-    cmdline_paste(eval_has_provider("clipboard") ? '*' : 0, true, true);
+    cmdline_paste(eval_has_provider("clipboard", false) ? '*' : 0, true, true);
     redrawcmd();
     return command_line_changed(s);
 
@@ -2171,6 +2183,12 @@ static int command_line_handle_key(CommandLineState *s)
 
 static int command_line_not_changed(CommandLineState *s)
 {
+  // Trigger CursorMovedC autocommands.
+  if (ccline.cmdpos != s->prev_cmdpos) {
+    trigger_cmd_autocmd(get_cmdline_type(), EVENT_CURSORMOVEDC);
+    s->prev_cmdpos = ccline.cmdpos;
+  }
+
   // Incremental searches for "/" and "?":
   // Enter command_line_not_changed() when a character has been read but the
   // command line did not change. Then we only search and redraw if something
@@ -2529,6 +2547,10 @@ static bool cmdpreview_may_show(CommandLineState *s)
     goto end;
   }
 
+  // Flush now: external cmdline may itself wish to update the screen which is
+  // currently disallowed during cmdpreview(no longer needed in case that changes).
+  cmdline_ui_flush();
+
   // Swap invalid command range if needed
   if ((ea.argt & EX_RANGE) && ea.line1 > ea.line2) {
     linenr_T lnum = ea.line1;
@@ -2552,7 +2574,7 @@ static bool cmdpreview_may_show(CommandLineState *s)
   // Open preview buffer if inccommand=split.
   if (icm_split && (cmdpreview_buf = cmdpreview_open_buf()) == NULL) {
     // Failed to create preview buffer, so disable preview.
-    set_string_option_direct(kOptInccommand, "nosplit", 0, SID_NONE);
+    set_option_direct(kOptInccommand, STATIC_CSTR_AS_OPTVAL("nosplit"), 0, SID_NONE);
     icm_split = false;
   }
   // Setup preview namespace if it's not already set.
@@ -2643,6 +2665,12 @@ static int command_line_changed(CommandLineState *s)
 {
   // Trigger CmdlineChanged autocommands.
   do_autocmd_cmdlinechanged(s->firstc > 0 ? s->firstc : '-');
+
+  // Trigger CursorMovedC autocommands.
+  if (ccline.cmdpos != s->prev_cmdpos) {
+    trigger_cmd_autocmd(get_cmdline_type(), EVENT_CURSORMOVEDC);
+    s->prev_cmdpos = ccline.cmdpos;
+  }
 
   const bool prev_cmdpreview = cmdpreview;
   if (s->firstc == ':'
@@ -3861,7 +3889,6 @@ void cursorcmd(void)
     if (ccline.redraw_state < kCmdRedrawPos) {
       ccline.redraw_state = kCmdRedrawPos;
     }
-    setcursor();
     return;
   }
 
@@ -4065,18 +4092,22 @@ static char *get_cmdline_completion(void)
     return NULL;
   }
 
-  set_expand_context(p->xpc);
-  if (p->xpc->xp_context == EXPAND_UNSUCCESSFUL) {
+  int xp_context = p->xpc->xp_context;
+  if (xp_context == EXPAND_NOTHING) {
+    set_expand_context(p->xpc);
+    xp_context = p->xpc->xp_context;
+    p->xpc->xp_context = EXPAND_NOTHING;
+  }
+  if (xp_context == EXPAND_UNSUCCESSFUL) {
     return NULL;
   }
 
-  char *cmd_compl = get_user_cmd_complete(p->xpc, p->xpc->xp_context);
+  char *cmd_compl = get_user_cmd_complete(NULL, xp_context);
   if (cmd_compl == NULL) {
     return NULL;
   }
 
-  if (p->xpc->xp_context == EXPAND_USER_LIST
-      || p->xpc->xp_context == EXPAND_USER_DEFINED) {
+  if (xp_context == EXPAND_USER_LIST || xp_context == EXPAND_USER_DEFINED) {
     size_t buflen = strlen(cmd_compl) + strlen(p->xpc->xp_arg) + 2;
     char *buffer = xmalloc(buflen);
     snprintf(buffer, buflen, "%s,%s", cmd_compl, p->xpc->xp_arg);
@@ -4166,6 +4197,7 @@ static int set_cmdline_pos(int pos)
   } else {
     new_cmdpos = pos;
   }
+
   return 0;
 }
 
@@ -4292,7 +4324,6 @@ static int open_cmdwin(void)
   win_T *old_curwin = curwin;
   int i;
   garray_T winsizes;
-  char typestr[2];
   int save_restart_edit = restart_edit;
   int save_State = State;
   bool save_exmode = exmode_active;
@@ -4435,9 +4466,7 @@ static int open_cmdwin(void)
   cmdwin_result = 0;
 
   // Trigger CmdwinEnter autocommands.
-  typestr[0] = (char)cmdwin_type;
-  typestr[1] = NUL;
-  apply_autocmds(EVENT_CMDWINENTER, typestr, typestr, false, curbuf);
+  trigger_cmd_autocmd(cmdwin_type, EVENT_CMDWINENTER);
   if (restart_edit != 0) {  // autocmd with ":startinsert"
     stuffcharReadbuff(K_NOP);
   }
@@ -4455,7 +4484,7 @@ static int open_cmdwin(void)
   const bool save_KeyTyped = KeyTyped;
 
   // Trigger CmdwinLeave autocommands.
-  apply_autocmds(EVENT_CMDWINLEAVE, typestr, typestr, false, curbuf);
+  trigger_cmd_autocmd(cmdwin_type, EVENT_CMDWINLEAVE);
 
   // Restore KeyTyped in case it is modified by autocommands
   KeyTyped = save_KeyTyped;
@@ -4555,6 +4584,7 @@ static int open_cmdwin(void)
   State = save_State;
   may_trigger_modechanged();
   setmouse();
+  setcursor();
 
   return cmdwin_result;
 }
@@ -4585,7 +4615,7 @@ char *script_get(exarg_T *const eap, size_t *const lenp)
 {
   char *cmd = eap->arg;
 
-  if (cmd[0] != '<' || cmd[1] != '<' || eap->getline == NULL) {
+  if (cmd[0] != '<' || cmd[1] != '<' || eap->ea_getline == NULL) {
     *lenp = strlen(eap->arg);
     return eap->skip ? NULL : xmemdupz(eap->arg, *lenp);
   }
@@ -4625,6 +4655,6 @@ static void set_search_match(pos_T *t)
   t->col = search_match_endcol;
   if (t->lnum > curbuf->b_ml.ml_line_count) {
     t->lnum = curbuf->b_ml.ml_line_count;
-    coladvance(MAXCOL);
+    coladvance(curwin, MAXCOL);
   }
 }
