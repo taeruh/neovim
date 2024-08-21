@@ -69,7 +69,8 @@ LSP
 
 LUA
 
-• TODO
+• API functions now consistently return an empty dictionary as
+  |vim.empty_dict()|. Earlier, a |lua-special-tbl| was sometimes used.
 
 OPTIONS
 
@@ -141,6 +142,7 @@ LUA
 OPTIONS
 
 • 'completeopt' flag "fuzzy" enables |fuzzy-matching| during |ins-completion|.
+• 'tabclose' controls which tab page to focus when closing a tab page.
 
 PERFORMANCE
 
@@ -161,10 +163,17 @@ TERMINAL
   system clipboard (copy). Querying with OSC 52 (paste) is not supported.
 • |hl-StatusLineTerm| and |hl-StatusLineTermNC| define highlights for the
   status line in |terminal| windows.
+• The terminal buffer now supports reflow (wrapped lines adapt when the buffer
+  is resized horizontally). Note: Lines that are not visible and kept in
+  'scrollback' are not reflown.
+• The |terminal| now supports OSC 8 escape sequences and will display
+  hyperlinks in supporting host terminals.
 
 TREESITTER
 
-• TODO
+• |LanguageTree:node_for_range()| gets anonymous and named nodes for a range
+• |vim.treesitter.get_node()| now takes an option `include_anonymous`, default
+  false, which allows it to return anonymous nodes as well as named nodes.
 
 TUI
 
@@ -179,7 +188,13 @@ CHANGED FEATURES                                                 *news-changed*
 
 These existing features changed their behavior.
 
-• N/A
+• 'scrollbind' now works properly with buffers that contain virutal lines.
+
+  Scrollbind works by aligning to a target top line of each window in a tab
+  page. Previously this was done by calculating the difference between the old
+  top line and the target top line, and scrolling by that amount. Now the
+  top lines are calculated using screen line numbers which take virtual lines
+  into account.
 
 ==============================================================================
 REMOVED FEATURES                                                 *news-removed*

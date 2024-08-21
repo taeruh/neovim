@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <limits.h>
-#include <msgpack/unpack.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -775,7 +774,8 @@ int object_to_hl_id(Object obj, const char *what, Error *err)
     String str = obj.data.string;
     return str.size ? syn_check_group(str.data, str.size) : 0;
   } else if (obj.type == kObjectTypeInteger) {
-    return MAX((int)obj.data.integer, 0);
+    int id = (int)obj.data.integer;
+    return (1 <= id && id <= highlight_num_groups()) ? id : 0;
   } else {
     api_set_error(err, kErrorTypeValidation, "Invalid highlight: %s", what);
     return 0;
@@ -922,15 +922,17 @@ bool api_dict_to_keydict(void *retval, FieldHashfn hashy, Dictionary dict, Error
       } else if (value->type == kObjectTypeDictionary) {
         *val = value->data.dictionary;
       } else {
-        api_err_exp(err, field->str, api_typename(field->type), api_typename(value->type));
+        api_err_exp(err, field->str, api_typename((ObjectType)field->type),
+                    api_typename(value->type));
         return false;
       }
     } else if (field->type == kObjectTypeBuffer || field->type == kObjectTypeWindow
                || field->type == kObjectTypeTabpage) {
-      if (value->type == kObjectTypeInteger || value->type == field->type) {
+      if (value->type == kObjectTypeInteger || value->type == (ObjectType)field->type) {
         *(handle_T *)mem = (handle_T)value->data.integer;
       } else {
-        api_err_exp(err, field->str, api_typename(field->type), api_typename(value->type));
+        api_err_exp(err, field->str, api_typename((ObjectType)field->type),
+                    api_typename(value->type));
         return false;
       }
     } else if (field->type == kObjectTypeLuaRef) {
@@ -980,7 +982,7 @@ Dictionary api_keydict_to_dict(void *value, KeySetLink *table, size_t max_size, 
     } else if (field->type == kObjectTypeBuffer || field->type == kObjectTypeWindow
                || field->type == kObjectTypeTabpage) {
       val.data.integer = *(handle_T *)mem;
-      val.type = field->type;
+      val.type = (ObjectType)field->type;
     } else if (field->type == kObjectTypeLuaRef) {
       // do nothing
     } else {

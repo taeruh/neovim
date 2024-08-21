@@ -33,44 +33,50 @@ lsp.rpc_response_error = lsp.rpc.rpc_response_error
 
 -- maps request name to the required server_capability in the client.
 lsp._request_name_to_capability = {
-  [ms.textDocument_hover] = { 'hoverProvider' },
-  [ms.textDocument_signatureHelp] = { 'signatureHelpProvider' },
-  [ms.textDocument_definition] = { 'definitionProvider' },
-  [ms.textDocument_implementation] = { 'implementationProvider' },
-  [ms.textDocument_declaration] = { 'declarationProvider' },
-  [ms.textDocument_typeDefinition] = { 'typeDefinitionProvider' },
-  [ms.textDocument_documentSymbol] = { 'documentSymbolProvider' },
-  [ms.textDocument_prepareCallHierarchy] = { 'callHierarchyProvider' },
   [ms.callHierarchy_incomingCalls] = { 'callHierarchyProvider' },
   [ms.callHierarchy_outgoingCalls] = { 'callHierarchyProvider' },
-  [ms.textDocument_prepareTypeHierarchy] = { 'typeHierarchyProvider' },
-  [ms.typeHierarchy_subtypes] = { 'typeHierarchyProvider' },
-  [ms.typeHierarchy_supertypes] = { 'typeHierarchyProvider' },
-  [ms.textDocument_rename] = { 'renameProvider' },
-  [ms.textDocument_prepareRename] = { 'renameProvider', 'prepareProvider' },
+  [ms.codeAction_resolve] = { 'codeActionProvider', 'resolveProvider' },
+  [ms.codeLens_resolve] = { 'codeLensProvider', 'resolveProvider' },
+  [ms.documentLink_resolve] = { 'documentLinkProvider', 'resolveProvider' },
+  [ms.inlayHint_resolve] = { 'inlayHintProvider', 'resolveProvider' },
   [ms.textDocument_codeAction] = { 'codeActionProvider' },
   [ms.textDocument_codeLens] = { 'codeLensProvider' },
-  [ms.codeLens_resolve] = { 'codeLensProvider', 'resolveProvider' },
-  [ms.codeAction_resolve] = { 'codeActionProvider', 'resolveProvider' },
-  [ms.workspace_executeCommand] = { 'executeCommandProvider' },
-  [ms.workspace_symbol] = { 'workspaceSymbolProvider' },
-  [ms.textDocument_references] = { 'referencesProvider' },
-  [ms.textDocument_rangeFormatting] = { 'documentRangeFormattingProvider' },
-  [ms.textDocument_rangesFormatting] = { 'documentRangeFormattingProvider', 'rangesSupport' },
-  [ms.textDocument_formatting] = { 'documentFormattingProvider' },
   [ms.textDocument_completion] = { 'completionProvider' },
-  [ms.textDocument_documentHighlight] = { 'documentHighlightProvider' },
-  [ms.textDocument_semanticTokens_full] = { 'semanticTokensProvider' },
-  [ms.textDocument_semanticTokens_full_delta] = { 'semanticTokensProvider' },
-  [ms.textDocument_inlayHint] = { 'inlayHintProvider' },
+  [ms.textDocument_declaration] = { 'declarationProvider' },
+  [ms.textDocument_definition] = { 'definitionProvider' },
   [ms.textDocument_diagnostic] = { 'diagnosticProvider' },
-  [ms.inlayHint_resolve] = { 'inlayHintProvider', 'resolveProvider' },
-  [ms.textDocument_documentLink] = { 'documentLinkProvider' },
-  [ms.documentLink_resolve] = { 'documentLinkProvider', 'resolveProvider' },
   [ms.textDocument_didClose] = { 'textDocumentSync', 'openClose' },
   [ms.textDocument_didOpen] = { 'textDocumentSync', 'openClose' },
-  [ms.textDocument_willSave] = { 'textDocumentSync', 'willSave' },
+  [ms.textDocument_documentColor] = { 'colorProvider' },
+  [ms.textDocument_documentHighlight] = { 'documentHighlightProvider' },
+  [ms.textDocument_documentLink] = { 'documentLinkProvider' },
+  [ms.textDocument_documentSymbol] = { 'documentSymbolProvider' },
+  [ms.textDocument_formatting] = { 'documentFormattingProvider' },
+  [ms.textDocument_hover] = { 'hoverProvider' },
+  [ms.textDocument_implementation] = { 'implementationProvider' },
+  [ms.textDocument_inlayHint] = { 'inlayHintProvider' },
+  [ms.textDocument_inlineValue] = { 'inlineValueProvider' },
+  [ms.textDocument_linkedEditingRange] = { 'linkedEditingRangeProvider' },
+  [ms.textDocument_moniker] = { 'monikerProvider' },
+  [ms.textDocument_onTypeFormatting] = { 'documentOnTypeFormattingProvider' },
+  [ms.textDocument_prepareCallHierarchy] = { 'callHierarchyProvider' },
+  [ms.textDocument_prepareRename] = { 'renameProvider', 'prepareProvider' },
+  [ms.textDocument_prepareTypeHierarchy] = { 'typeHierarchyProvider' },
+  [ms.textDocument_rangeFormatting] = { 'documentRangeFormattingProvider' },
+  [ms.textDocument_rangesFormatting] = { 'documentRangeFormattingProvider', 'rangesSupport' },
+  [ms.textDocument_references] = { 'referencesProvider' },
+  [ms.textDocument_rename] = { 'renameProvider' },
+  [ms.textDocument_selectionRange] = { 'selectionRangeProvider' },
+  [ms.textDocument_semanticTokens_full] = { 'semanticTokensProvider' },
+  [ms.textDocument_semanticTokens_full_delta] = { 'semanticTokensProvider' },
+  [ms.textDocument_signatureHelp] = { 'signatureHelpProvider' },
+  [ms.textDocument_typeDefinition] = { 'typeDefinitionProvider' },
   [ms.textDocument_willSaveWaitUntil] = { 'textDocumentSync', 'willSaveWaitUntil' },
+  [ms.textDocument_willSave] = { 'textDocumentSync', 'willSave' },
+  [ms.typeHierarchy_subtypes] = { 'typeHierarchyProvider' },
+  [ms.typeHierarchy_supertypes] = { 'typeHierarchyProvider' },
+  [ms.workspace_executeCommand] = { 'executeCommandProvider' },
+  [ms.workspace_symbol] = { 'workspaceSymbolProvider' },
 }
 
 -- TODO improve handling of scratch buffers with LSP attached.
@@ -855,17 +861,20 @@ api.nvim_create_autocmd('VimLeavePre', {
 ---@param params table|nil Parameters to send to the server
 ---@param handler? lsp.Handler See |lsp-handler|
 ---       If nil, follows resolution strategy defined in |lsp-handler-configuration|
----
+---@param on_unsupported? fun()
+---       The function to call when the buffer has no clients that support the given method.
+---       Defaults to an `ERROR` level notification.
 ---@return table<integer, integer> client_request_ids Map of client-id:request-id pairs
 ---for all successful requests.
 ---@return function _cancel_all_requests Function which can be used to
 ---cancel all the requests. You could instead
 ---iterate all clients and call their `cancel_request()` methods.
-function lsp.buf_request(bufnr, method, params, handler)
+function lsp.buf_request(bufnr, method, params, handler, on_unsupported)
   validate({
     bufnr = { bufnr, 'n', true },
     method = { method, 's' },
     handler = { handler, 'f', true },
+    on_unsupported = { on_unsupported, 'f', true },
   })
 
   bufnr = resolve_bufnr(bufnr)
@@ -887,7 +896,11 @@ function lsp.buf_request(bufnr, method, params, handler)
 
   -- if has client but no clients support the given method, notify the user
   if next(clients) and not method_supported then
-    vim.notify(lsp._unsupported_method(method), vim.log.levels.ERROR)
+    if on_unsupported == nil then
+      vim.notify(lsp._unsupported_method(method), vim.log.levels.ERROR)
+    else
+      on_unsupported()
+    end
     vim.cmd.redraw()
     return {}, function() end
   end
