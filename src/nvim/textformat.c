@@ -47,7 +47,7 @@ static bool did_add_space = false;  ///< auto_format() added an extra space
                                     ///< under the cursor
 
 #define WHITECHAR(cc) (ascii_iswhite(cc) \
-                       && !utf_iscomposing(utf_ptr2char((char *)get_cursor_pos_ptr() + 1)))
+                       && !utf_iscomposing_first(utf_ptr2char((char *)get_cursor_pos_ptr() + 1)))
 
 /// Return true if format option 'x' is in effect.
 /// Take care of no formatting when 'paste' is set.
@@ -400,7 +400,7 @@ void internal_format(int textwidth, int second_indent, int flags, bool format_on
         }
         if (second_indent >= 0) {
           if (State & VREPLACE_FLAG) {
-            change_indent(INDENT_SET, second_indent, false, NUL, true);
+            change_indent(INDENT_SET, second_indent, false, true);
           } else if (leader_len > 0 && second_indent - leader_len > 0) {
             int padding = second_indent - leader_len;
 

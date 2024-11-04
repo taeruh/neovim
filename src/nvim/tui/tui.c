@@ -109,6 +109,7 @@ struct TUIData {
   bool set_cursor_color_as_str;
   bool cursor_color_changed;
   bool is_starting;
+  bool did_set_grapheme_cluster_mode;
   FILE *screenshot;
   cursorentry_T cursor_shapes[SHAPE_IDX_COUNT];
   HlAttrs clear_attrs;
@@ -133,11 +134,12 @@ struct TUIData {
     int resize_screen;
     int reset_scroll_region;
     int set_cursor_style, reset_cursor_style;
-    int save_title, restore_title;
+    int save_title, restore_title, set_title;
     int set_underline_style;
     int set_underline_color;
     int sync;
   } unibi_ext;
+  char *set_title;
   char *space_buf;
   size_t space_buf_len;
   bool stopped;
@@ -220,6 +222,7 @@ static void tui_set_term_mode(TUIData *tui, TermMode mode, bool set)
 void tui_handle_term_mode(TUIData *tui, TermMode mode, TermModeState state)
   FUNC_ATTR_NONNULL_ALL
 {
+  bool is_set = false;
   switch (state) {
   case kTermModeNotRecognized:
   case kTermModePermanentlySet:
@@ -228,6 +231,8 @@ void tui_handle_term_mode(TUIData *tui, TermMode mode, TermModeState state)
     // then there is nothing to do
     break;
   case kTermModeSet:
+    is_set = true;
+    FALLTHROUGH;
   case kTermModeReset:
     // The terminal supports changing the given mode
     switch (mode) {
@@ -239,6 +244,12 @@ void tui_handle_term_mode(TUIData *tui, TermMode mode, TermModeState state)
     case kTermModeResizeEvents:
       signal_watcher_stop(&tui->winch_handle);
       tui_set_term_mode(tui, mode, true);
+      break;
+    case kTermModeGraphemeClusters:
+      if (!is_set) {
+        tui_set_term_mode(tui, mode, true);
+        tui->did_set_grapheme_cluster_mode = true;
+      }
       break;
     }
   }
@@ -434,6 +445,7 @@ static void terminfo_start(TUIData *tui)
   if (!nsterm) {
     tui_request_term_mode(tui, kTermModeSynchronizedOutput);
     tui_request_term_mode(tui, kTermModeResizeEvents);
+    tui_request_term_mode(tui, kTermModeGraphemeClusters);
   }
 
   // Don't use DECRQSS in screen or tmux, as they behave strangely when receiving it.
@@ -494,7 +506,9 @@ static void terminfo_stop(TUIData *tui)
 
   // Disable resize events
   tui_set_term_mode(tui, kTermModeResizeEvents, false);
-
+  if (tui->did_set_grapheme_cluster_mode) {
+    tui_set_term_mode(tui, kTermModeGraphemeClusters, false);
+  }
   // May restore old title before exiting alternate screen.
   tui_set_title(tui, NULL_STRING);
   if (ui_client_exit_status == 0) {
@@ -523,6 +537,7 @@ static void terminfo_stop(TUIData *tui)
     abort();
   }
   unibi_destroy(tui->ut);
+  XFREE_CLEAR(tui->set_title);
 }
 
 static void tui_terminal_start(TUIData *tui)
@@ -1010,7 +1025,7 @@ static void print_cell_at_pos(TUIData *tui, int row, int col, UCell *cell, bool 
   char buf[MAX_SCHAR_SIZE];
   schar_get(buf, cell->data);
   int c = utf_ptr2char(buf);
-  bool is_ambiwidth = utf_ambiguous_width(c);
+  bool is_ambiwidth = utf_ambiguous_width(buf);
   if (is_doublewidth && (is_ambiwidth || utf_char2cells(c) == 1)) {
     // If the server used setcellwidths() to treat a single-width char as double-width,
     // it needs to be treated like an ambiguous-width char.
@@ -1038,7 +1053,7 @@ static void clear_region(TUIData *tui, int top, int bot, int left, int right, in
   // with the default colorscheme background. Consequently, any flush that happens
   // during startup would result in clearing invalidated regions with zeroed
   // clear_attrs, perceived as a black flicker. Reset attributes to clear with
-  // current terminal background instead(#28667, #28668).
+  // current terminal background instead (#28667, #28668).
   if (tui->set_default_colors) {
     update_attrs(tui, attr_id);
   } else {
@@ -1186,7 +1201,7 @@ static CursorShape tui_cursor_decode_shape(const char *shape_str)
   return shape;
 }
 
-static cursorentry_T decode_cursor_entry(Dictionary args)
+static cursorentry_T decode_cursor_entry(Dict args)
 {
   cursorentry_T r = shape_table[0];
 
@@ -1218,8 +1233,8 @@ void tui_mode_info_set(TUIData *tui, bool guicursor_enabled, Array args)
 
   // cursor style entries as defined by `shape_table`.
   for (size_t i = 0; i < args.size; i++) {
-    assert(args.items[i].type == kObjectTypeDictionary);
-    cursorentry_T r = decode_cursor_entry(args.items[i].data.dictionary);
+    assert(args.items[i].type == kObjectTypeDict);
+    cursorentry_T r = decode_cursor_entry(args.items[i].data.dict);
     tui->cursor_shapes[i] = r;
   }
 
@@ -1526,7 +1541,7 @@ static void show_verbose_terminfo(TUIData *tui)
   ADD_C(args, BOOLEAN_OBJ(true));  // history
   MAXSIZE_TEMP_DICT(opts, 1);
   PUT_C(opts, "verbose", BOOLEAN_OBJ(true));
-  ADD_C(args, DICTIONARY_OBJ(opts));
+  ADD_C(args, DICT_OBJ(opts));
   rpc_send_event(ui_client_channel_id, "nvim_echo", args);
   xfree(str.data);
 }
@@ -1554,8 +1569,7 @@ void tui_suspend(TUIData *tui)
 
 void tui_set_title(TUIData *tui, String title)
 {
-  if (!(unibi_get_str(tui->ut, unibi_to_status_line)
-        && unibi_get_str(tui->ut, unibi_from_status_line))) {
+  if (!unibi_get_ext_str(tui->ut, (unsigned)tui->unibi_ext.set_title)) {
     return;
   }
   if (title.size > 0) {
@@ -1564,9 +1578,9 @@ void tui_set_title(TUIData *tui, String title)
       unibi_out_ext(tui, tui->unibi_ext.save_title);
       tui->title_enabled = true;
     }
-    unibi_out(tui, unibi_to_status_line);
-    out(tui, title.data, title.size);
-    unibi_out(tui, unibi_from_status_line);
+    UNIBI_SET_NUM_VAR(tui->params[0], 0);
+    UNIBI_SET_STR_VAR(tui->params[1], title.data);
+    unibi_out_ext(tui, tui->unibi_ext.set_title);
   } else if (tui->title_enabled) {
     // Restore title/icon from the "stack". #4063
     unibi_out_ext(tui, tui->unibi_ext.restore_title);
@@ -1790,12 +1804,17 @@ static void unibi_goto(TUIData *tui, int row, int col)
       memset(&vars, 0, sizeof(vars)); \
       tui->cork = true; \
 retry: \
+      /* Copy parameters on every retry, as unibi_format() may modify them. */ \
       memcpy(params, tui->params, sizeof(params)); \
       unibi_format(vars, vars + 26, str, params, out, tui, pad, tui); \
       if (tui->overflow) { \
         tui->bufpos = orig_pos; \
-        flush_buf(tui); \
-        goto retry; \
+        /* If orig_pos is 0, there's nothing to flush and retrying won't work. */ \
+        /* TODO(zeertzjq): should this situation still be handled? */ \
+        if (orig_pos > 0) { \
+          flush_buf(tui); \
+          goto retry; \
+        } \
       } \
       tui->cork = false; \
     } \
@@ -1827,6 +1846,7 @@ static void out(void *ctx, const char *str, size_t len)
     }
     flush_buf(tui);
   }
+  // TODO(zeertzjq): handle string longer than buffer size? #30794
 
   memcpy(tui->buf + tui->bufpos, str, len);
   tui->bufpos += len;
@@ -2364,6 +2384,19 @@ static void augment_terminfo(TUIData *tui, const char *term, int vte_version, in
 
   tui->unibi_ext.save_title = (int)unibi_add_ext_str(ut, "ext.save_title", "\x1b[22;0t");
   tui->unibi_ext.restore_title = (int)unibi_add_ext_str(ut, "ext.restore_title", "\x1b[23;0t");
+
+  const char *tsl = unibi_get_str(ut, unibi_to_status_line);
+  const char *fsl = unibi_get_str(ut, unibi_from_status_line);
+  if (tsl != NULL && fsl != NULL) {
+    // Add a single extended capability for the whole sequence to set title,
+    // as it is usually an OSC sequence that cannot be cut in half.
+    // Use %p2 for the title string, as to_status_line may take an argument.
+    size_t set_title_len = strlen(tsl) + strlen("%p2%s") + strlen(fsl);
+    char *set_title = xmallocz(set_title_len);
+    snprintf(set_title, set_title_len + 1, "%s%s%s", tsl, "%p2%s", fsl);
+    tui->unibi_ext.set_title = (int)unibi_add_ext_str(ut, "ext.set_title", set_title);
+    tui->set_title = set_title;
+  }
 
   /// Terminals usually ignore unrecognized private modes, and there is no
   /// known ambiguity with these. So we just set them unconditionally.

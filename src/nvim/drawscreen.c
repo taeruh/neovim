@@ -1805,8 +1805,10 @@ static void win_update(win_T *wp)
           // Correct the first entry for filler lines at the top
           // when it won't get updated below.
           if (win_may_fill(wp) && bot_start > 0) {
-            wp->w_lines[0].wl_size = (uint16_t)(plines_win_nofill(wp, wp->w_topline, true)
-                                                + wp->w_topfill);
+            int n = plines_win_nofill(wp, wp->w_topline, false) + wp->w_topfill
+                    - adjust_plines_for_skipcol(wp);
+            n = MIN(n, wp->w_height_inner);
+            wp->w_lines[0].wl_size = (uint16_t)n;
           }
         }
       }
@@ -2453,10 +2455,12 @@ redr_statuscol:
       recursive = true;
       curwin->w_valid &= ~VALID_TOPLINE;
       update_topline(curwin);  // may invalidate w_botline again
+      // New redraw either due to updated topline or reset skipcol.
       if (must_redraw != 0) {
         // Don't update for changes in buffer again.
         int mod_set = curbuf->b_mod_set;
         curbuf->b_mod_set = false;
+        curs_columns(curwin, true);
         win_update(curwin);
         must_redraw = 0;
         curbuf->b_mod_set = mod_set;

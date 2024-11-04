@@ -91,24 +91,24 @@ processing a quickfix or location list command, it will be aborted.
 :ll[!] [nr]		Same as ":cc", except the location list for the
 :[nr]ll[!]		current window is used instead of the quickfix list.
 
-						*:cn* *:cne* *:cnext* *E553*
+						*:cn* *:cne* *:cnext* *E553* *]q*
 :[count]cn[ext][!]	Display the [count] next error in the list that
 			includes a file name.  If there are no file names at
 			all, go to the [count] next error.  See |:cc| for
 			[!] and 'switchbuf'.
 
-							*:lne* *:lnext*
+							*:lne* *:lnext* *]l*
 :[count]lne[xt][!]	Same as ":cnext", except the location list for the
 			current window is used instead of the quickfix list.
 
-:[count]cN[ext][!]		*:cp* *:cprevious*  *:cprev* *:cN* *:cNext*
+:[count]cN[ext][!]		*:cp* *:cprevious*  *:cprev* *:cN* *:cNext* *[q*
 :[count]cp[revious][!]	Display the [count] previous error in the list that
 			includes a file name.  If there are no file names at
 			all, go to the [count] previous error.  See |:cc| for
 			[!] and 'switchbuf'.
 
 
-:[count]lN[ext][!]		*:lp* *:lprevious* *:lprev* *:lN* *:lNext*
+:[count]lN[ext][!]		*:lp* *:lprevious* *:lprev* *:lN* *:lNext* *[l*
 :[count]lp[revious][!]	Same as ":cNext" and ":cprevious", except the location
 			list for the current window is used instead of the
 			quickfix list.
@@ -171,18 +171,18 @@ processing a quickfix or location list command, it will be aborted.
 :[count]laf[ter]	Same as ":cafter", except the location list for the
 			current window is used instead of the quickfix list.
 
-							*:cnf* *:cnfile*
+							*:cnf* *:cnfile* *]CTRL-Q*
 :[count]cnf[ile][!]	Display the first error in the [count] next file in
 			the list that includes a file name.  If there are no
 			file names at all or if there is no next file, go to
 			the [count] next error.  See |:cc| for [!] and
 			'switchbuf'.
 
-							*:lnf* *:lnfile*
+							*:lnf* *:lnfile* *]CTRL-L*
 :[count]lnf[ile][!]	Same as ":cnfile", except the location list for the
 			current window is used instead of the quickfix list.
 
-:[count]cNf[ile][!]			*:cpf* *:cpfile* *:cNf* *:cNfile*
+:[count]cNf[ile][!]			*:cpf* *:cpfile* *:cNf* *:cNfile* *[CTRL-Q*
 :[count]cpf[ile][!]	Display the last error in the [count] previous file in
 			the list that includes a file name.  If there are no
 			file names at all or if there is no next file, go to
@@ -190,16 +190,16 @@ processing a quickfix or location list command, it will be aborted.
 			'switchbuf'.
 
 
-:[count]lNf[ile][!]			*:lpf* *:lpfile* *:lNf* *:lNfile*
+:[count]lNf[ile][!]			*:lpf* *:lpfile* *:lNf* *:lNfile* *[CTRL-L*
 :[count]lpf[ile][!]	Same as ":cNfile" and ":cpfile", except the location
 			list for the current window is used instead of the
 			quickfix list.
 
-							*:crewind* *:cr*
+							*:crewind* *:cr* *[Q*
 :cr[ewind][!] [nr]	Display error [nr].  If [nr] is omitted, the FIRST
 			error is displayed.  See |:cc|.
 
-							*:lrewind* *:lr*
+							*:lrewind* *:lr* *[L*
 :lr[ewind][!] [nr]	Same as ":crewind", except the location list for the
 			current window is used instead of the quickfix list.
 
@@ -209,11 +209,11 @@ processing a quickfix or location list command, it will be aborted.
 							*:lfirst* *:lfir*
 :lfir[st][!] [nr]	Same as ":lrewind".
 
-							*:clast* *:cla*
+							*:clast* *:cla* *]Q*
 :cla[st][!] [nr]	Display error [nr].  If [nr] is omitted, the LAST
 			error is displayed.  See |:cc|.
 
-							*:llast* *:lla*
+							*:llast* *:lla* *]L*
 :lla[st][!] [nr]	Same as ":clast", except the location list for the
 			current window is used instead of the quickfix list.
 
@@ -1262,6 +1262,33 @@ not "b:current_compiler".  What the command actually does is the following:
 
 For writing a compiler plugin, see |write-compiler-plugin|.
 
+Use the |compiler-make| plugin to undo the effect of a compiler plugin.
+
+CPPCHECK			*quickfix-cppcheck* *compiler-cppcheck*
+
+Use g/b:`c_cppcheck_params` to set cppcheck parameters. The global
+settings by default include
+
+- `--verbose`: Enables verbose output.
+- `--force`: Forces checking of all configurations.
+- `--inline-suppr`: Allows inline suppressions.
+- `--enable=...`: Enables specific checks like warnings, style, performance,
+  portability, information, and missing includes.
+- `-j`: Utilizes multiple processors if available, determined by the
+  `getconf` command if available (requires omitting the unusedFunction check)
+
+For C++ files (`filetype == 'cpp'`), the `--language=c++` option is added to
+ensure Cppcheck treats the file as C++.
+
+If compile_commands.json is present in the current directory, it is added as a
+`--project` parameter to the command line. Otherwise, by default the
+directories in &path are passed as include directories. These can be set by
+g/b:`c_cppcheck_includes` as a list of `-I` flags. Tim Pope's vim-apathy
+plug-in [0] can expand &path. To also append the folders in a git repo use >
+
+  let &l:path = join(systemlist('git ls-tree -d --name-only -r HEAD'), ',')
+
+[0] https://github.com/tpope/vim-apathy
 
 DOTNET							*compiler-dotnet*
 
@@ -1277,7 +1304,6 @@ Example: limit output to only display errors, and suppress the project name: >
 	let dotnet_show_project_file = v:false
 	compiler dotnet
 <
-
 GCC					*quickfix-gcc*	*compiler-gcc*
 
 There's one variable you can set for the GCC compiler:
@@ -1294,6 +1320,24 @@ Commonly used compiler options can be added to 'makeprg' by setting the
 g:javac_makeprg_params variable.  For example: >
 	let g:javac_makeprg_params = "-Xlint:all -encoding utf-8"
 <
+GNU MAKE						*compiler-make*
+
+Since the default make program is "make", the compiler plugin for make,
+:compiler make, will reset the 'makeprg' and 'errorformat' option to
+the default values and unlet any variables that may have been set by a
+previous compiler plugin.
+
+GROFF					*quickfix-groff* *compiler-groff*
+
+The GROFF compiler plugin uses the mom macro set (documented in the groff_mom
+manpage) as input and expects that the output file type extension is passed to
+make, say :make html or :make pdf.
+
+Additional arguments can be passed to groff by setting them in
+`b:groff_compiler_args` or `g:groff_compiler_args`. The `language` argument
+passed to groff is set using 'spelllang'; it can be overridden by setting
+`b:groff_compiler_lang`. The default encoding is `UTF-8` and can be changed
+by setting `b:groff_compiler_encoding` or `g:groff_compiler_encoding`.
 
 PANDOC					*quickfix-pandoc* *compiler-pandoc*
 
@@ -1307,8 +1351,7 @@ Additional arguments can be passed to pandoc:
 
 The `--from` argument is an educated guess using the buffer file type;
 it can be overridden by setting `b:pandoc_compiler_from`.
-Likewise the `--metadata lang` argument is set using `&spelllang`;
-it can be overridden by setting `b:pandoc_compiler_lang`.
+The `--metadata lang` argument is set using 'spelllang';
 If `--from=markdown` is assumed and no title set in a title header or
 YAML block, then the filename (without extension) is used as the title.
 

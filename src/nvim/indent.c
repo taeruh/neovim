@@ -769,9 +769,15 @@ int get_number_indent(linenr_T lnum)
   return (int)col;
 }
 
+/// Check "briopt" as 'breakindentopt' and update the members of "wp".
 /// This is called when 'breakindentopt' is changed and when a window is
 /// initialized
-bool briopt_check(win_T *wp)
+///
+/// @param briopt  when NULL: use "wp->w_p_briopt"
+/// @param wp      when NULL: only check "briopt"
+///
+/// @return  FAIL for failure, OK otherwise.
+bool briopt_check(char *briopt, win_T *wp)
 {
   int bri_shift = 0;
   int bri_min = 20;
@@ -779,7 +785,13 @@ bool briopt_check(win_T *wp)
   int bri_list = 0;
   int bri_vcol = 0;
 
-  char *p = wp->w_p_briopt;
+  char *p = empty_string_option;
+  if (briopt != NULL) {
+    p = briopt;
+  } else if (wp != NULL) {
+    p = wp->w_p_briopt;
+  }
+
   while (*p != NUL) {
     // Note: Keep this in sync with p_briopt_values
     if (strncmp(p, "shift:", 6) == 0
@@ -805,6 +817,10 @@ bool briopt_check(win_T *wp)
     if (*p == ',') {
       p++;
     }
+  }
+
+  if (wp == NULL) {
+    return OK;
   }
 
   wp->w_briopt_shift = bri_shift;
@@ -891,7 +907,17 @@ int get_breakindent_win(win_T *wp, char *line)
           if (wp->w_briopt_list > 0) {
             prev_list += wp->w_briopt_list;
           } else {
-            prev_indent = (int)(*regmatch.endp - *regmatch.startp);
+            char *ptr = *regmatch.startp;
+            char *end_ptr = *regmatch.endp;
+            int indent = 0;
+            // Compute the width of the matched text.
+            // Use win_chartabsize() so that TAB size is correct,
+            // while wrapping is ignored.
+            while (ptr < end_ptr) {
+              indent += win_chartabsize(wp, ptr, indent);
+              MB_PTR_ADV(ptr);
+            }
+            prev_indent = indent;
           }
         }
         vim_regfree(regmatch.regprog);
@@ -1407,7 +1433,7 @@ void fixthisline(IndentGetter get_the_indent)
     return;
   }
 
-  change_indent(INDENT_SET, amount, false, 0, true);
+  change_indent(INDENT_SET, amount, false, true);
   if (linewhite(curwin->w_cursor.lnum)) {
     did_ai = true;  // delete the indent if the line stays empty
   }

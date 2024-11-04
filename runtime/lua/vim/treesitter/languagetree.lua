@@ -108,7 +108,7 @@ LanguageTree.__index = LanguageTree
 ---@param opts vim.treesitter.LanguageTree.new.Opts?
 ---@return vim.treesitter.LanguageTree parser object
 function LanguageTree.new(source, lang, opts)
-  language.add(lang)
+  assert(language.add(lang))
   opts = opts or {}
 
   if source == 0 then
@@ -734,7 +734,7 @@ local function add_injection(t, tree_index, pattern, lang, combined, ranges)
   table.insert(t[tree_index][lang][pattern].regions, ranges)
 end
 
--- TODO(clason): replace by refactored `ts.has_parser` API (without registering)
+-- TODO(clason): replace by refactored `ts.has_parser` API (without side effects)
 --- The result of this function is cached to prevent nvim_get_runtime_file from being
 --- called too often
 --- @param lang string parser name
@@ -833,13 +833,7 @@ function LanguageTree:_get_injections()
     local start_line, _, end_line, _ = root_node:range()
 
     for pattern, match, metadata in
-      self._injection_query:iter_matches(
-        root_node,
-        self._source,
-        start_line,
-        end_line + 1,
-        { all = true }
-      )
+      self._injection_query:iter_matches(root_node, self._source, start_line, end_line + 1)
     do
       local lang, combined, ranges = self:_get_injection(match, metadata)
       if lang then

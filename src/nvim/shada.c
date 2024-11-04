@@ -231,7 +231,7 @@ typedef struct {
   ShadaEntryType type;
   Timestamp timestamp;
   union {
-    Dictionary header;
+    Dict header;
     struct shada_filemark {
       char name;
       pos_T mark;
@@ -246,7 +246,7 @@ typedef struct {
     struct reg {  // yankreg_T
       char name;
       MotionType type;
-      char **contents;
+      String *contents;
       bool is_unnamed;
       size_t contents_size;
       size_t width;
@@ -658,7 +658,7 @@ static const void *shada_hist_iter(const void *const iter, const uint8_t history
           .histtype = history_type,
           .string = hist_he.hisstr,
           .sep = (char)(history_type == HIST_SEARCH
-                        ? hist_he.hisstr[strlen(hist_he.hisstr) + 1]
+                        ? hist_he.hisstr[hist_he.hisstrlen + 1]
                         : 0),
         }
       },
@@ -784,6 +784,7 @@ static inline void hms_to_he_array(const HistoryMergerState *const hms_p,
     hist->timestamp = cur_entry->data.timestamp;
     hist->hisnum = (int)(hist - hist_array) + 1;
     hist->hisstr = cur_entry->data.data.history_item.string;
+    hist->hisstrlen = strlen(cur_entry->data.data.history_item.string);
     hist->additional_data = cur_entry->data.additional_data;
     hist++;
   })
@@ -812,7 +813,7 @@ static inline void hms_dealloc(HistoryMergerState *const hms_p)
 
 /// Iterate over global variables
 ///
-/// @warning No modifications to global variable dictionary must be performed
+/// @warning No modifications to global variable Dict must be performed
 ///          while iteration is in progress.
 ///
 /// @param[in]   iter   Iterator. Pass NULL to start iteration.
@@ -1490,7 +1491,7 @@ static ShaDaWriteResult shada_pack_entry(PackerBuffer *const packer, ShadaEntry 
     PACK_KEY(REG_KEY_CONTENTS);
     mpack_array(&sbuf.ptr, (uint32_t)entry.data.reg.contents_size);
     for (size_t i = 0; i < entry.data.reg.contents_size; i++) {
-      mpack_bin(cstr_as_string(entry.data.reg.contents[i]), &sbuf);
+      mpack_bin(entry.data.reg.contents[i], &sbuf);
     }
     PACK_KEY(KEY_NAME_CHAR);
     mpack_uint(&sbuf.ptr, (uint8_t)entry.data.reg.name);
@@ -1886,13 +1887,18 @@ static inline ShaDaWriteResult shada_read_when_writing(FileDescriptor *const sd_
           shada_free_shada_entry(&entry);
           break;
         }
-        if (wms->global_marks[idx].data.type == kSDItemMissing) {
+
+        // Global or numbered mark.
+        PossiblyFreedShadaEntry *mark
+          = idx < 26 ? &wms->global_marks[idx] : &wms->numbered_marks[idx - 26];
+
+        if (mark->data.type == kSDItemMissing) {
           if (namedfm[idx].fmark.timestamp >= entry.timestamp) {
             shada_free_shada_entry(&entry);
             break;
           }
         }
-        COMPARE_WITH_ENTRY(&wms->global_marks[idx], entry);
+        COMPARE_WITH_ENTRY(mark, entry);
       }
       break;
     case kSDItemChange:
@@ -2911,7 +2917,7 @@ static void shada_free_shada_entry(ShadaEntry *const entry)
     xfree(entry->data.unknown_item.contents);
     break;
   case kSDItemHeader:
-    api_free_dictionary(entry->data.header);
+    api_free_dict(entry->data.header);
     break;
   case kSDItemChange:
   case kSDItemJump:
@@ -2924,7 +2930,7 @@ static void shada_free_shada_entry(ShadaEntry *const entry)
     break;
   case kSDItemRegister:
     for (size_t i = 0; i < entry->data.reg.contents_size; i++) {
-      xfree(entry->data.reg.contents[i]);
+      api_free_string(entry->data.reg.contents[i]);
     }
     xfree(entry->data.reg.contents);
     break;
@@ -3230,7 +3236,7 @@ shada_read_next_item_start:
   case kSDItemHeader:
     // TODO(bfredl): header is written to file and provides useful debugging
     // info. It is never read by nvim (earlier we parsed it back to a
-    // Dictionary, but that value was never used)
+    // Dict, but that value was never used)
     break;
   case kSDItemSearchPattern: {
     Dict(_shada_search_pat) *it = &entry->data.search_pattern;
@@ -3306,9 +3312,9 @@ shada_read_next_item_start:
       goto shada_read_next_item_error;
     }
     entry->data.reg.contents_size = it.rc.size;
-    entry->data.reg.contents = xmalloc(it.rc.size * sizeof(char *));
+    entry->data.reg.contents = xmalloc(it.rc.size * sizeof(String));
     for (size_t j = 0; j < it.rc.size; j++) {
-      entry->data.reg.contents[j] = xmemdupz(it.rc.items[j].data, it.rc.items[j].size);
+      entry->data.reg.contents[j] = copy_string(it.rc.items[j], NULL);
     }
     kv_destroy(it.rc);
 

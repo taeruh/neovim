@@ -45,7 +45,7 @@ directory where the Vim stuff is located.  For example, if your syntax files
 are in the "/usr/vim/vim82/syntax" directory, set $VIMRUNTIME to
 "/usr/vim/vim82".  You must do this in the shell, before starting Vim.
 This command also sources the |menu.vim| script when the GUI is running or
-will start soon.  See |'go-M'| about avoiding that.
+will start soon.
 
 					*:hi-normal* *:highlight-normal*
 If you are running in the GUI, you can get white text on a black background
@@ -152,8 +152,7 @@ add a few items or change the highlighting, follow these steps:
 1. Create your user directory from 'runtimepath', see above.
 
 2. Create a directory in there called "after/syntax".  For Unix: >
-	mkdir ~/.config/nvim/after
-	mkdir ~/.config/nvim/after/syntax
+	mkdir -p ~/.config/nvim/after/syntax
 
 3. Write a Vim script that contains the commands you want to use.  For
    example, to change the colors for the C syntax: >
@@ -1635,7 +1634,8 @@ respectively.
 Javadoc is a program that takes special comments out of Java program files and
 creates HTML pages.  The standard configuration will highlight this HTML code
 similarly to HTML files (see |html.vim|).  You can even add JavaScript and CSS
-inside this code (see below).  The HTML rendering diverges as follows:
+inside this code (see below).  The HTML rendering and the Markdown rendering
+diverge as follows:
   1. The first sentence (all characters up to the first period `.`, which is
      followed by a whitespace character or a line terminator, or up to the
      first block tag, e.g. `@param`, `@return`) is colored as
@@ -1648,8 +1648,13 @@ inside this code (see below).  The HTML rendering diverges as follows:
 	`*Special`	special symbols
      and some of their arguments are colored as
 	`*Function`	function names.
-To turn this feature off, add the following line to your startup file: >
+To turn this feature off for both HTML and Markdown, add the following line to
+your startup file: >
 	:let g:java_ignore_javadoc = 1
+Alternatively, only suppress HTML comments or Markdown comments: >
+	:let g:java_ignore_html = 1
+	:let g:java_ignore_markdown = 1
+See |ft-java-plugin| for additional support available for Markdown comments.
 
 If you use the special Javadoc comment highlighting described above, you can
 also turn on special highlighting for JavaScript, Visual Basic scripts, and
@@ -1662,6 +1667,14 @@ Note that these three variables are maintained in the HTML syntax file.
 
 Numbers and strings can be recognized in non-Javadoc comments with >
 	:let g:java_comment_strings = 1
+
+When 'foldmethod' is set to "syntax", blocks of code and multi-line comments
+will be folded.  No text is usually written in the first line of a multi-line
+comment, making folded contents of Javadoc comments less informative with the
+default 'foldtext' value; you may opt for showing the contents of a second
+line for any comments written in this way, and showing the contents of a first
+line otherwise, with >
+	:let g:java_foldtext_show_first_or_second_line = 1
 
 Trailing whitespace characters or a run of space characters before a tab
 character can be marked as an error with >
@@ -1676,6 +1689,12 @@ In order to highlight nested parens with different colors, define colors for
 or >
 	:hi javaParen ctermfg=blue guifg=#0000ff
 
+Certain modifiers are incompatible with each other, e.g. `abstract` and
+`final`: >
+	:syn list javaConceptKind
+and can be differently highlighted as a group than other modifiers with >
+	:hi link javaConceptKind NonText
+
 If you notice highlighting errors while scrolling backwards, which are fixed
 when redrawing with CTRL-L, try setting the "g:java_minlines" variable to
 a larger number: >
@@ -1684,9 +1703,27 @@ This will make the syntax synchronization start 50 lines before the first
 displayed line.  The default value is 10.  The disadvantage of using a larger
 number is that redrawing can become slow.
 
+Significant changes to the Java platform are gradually introduced in the form
+of JDK Enhancement Proposals (JEPs) that can be implemented for a release and
+offered as its preview features.  It may take several JEPs and a few release
+cycles for such a feature to become either integrated into the platform or
+withdrawn from this effort.  To cater for early adopters, there is optional
+support in Vim for syntax related preview features that are implemented.  You
+can request it by specifying a list of preview feature numbers as follows: >
+	:let g:java_syntax_previews = [455, 476]
+
+The supported JEP numbers are to be drawn from this table:
+	`430`: String Templates [JDK 21]
+	`455`: Primitive types in Patterns, instanceof, and switch
+	`476`: Module Import Declarations
+
+Note that as soon as the particular preview feature will have been integrated
+into the Java platform, its entry will be removed from the table and related
+optionality will be discontinued.
+
 
 JSON			*json.vim* *ft-json-syntax* *g:vim_json_conceal*
-					       *g:vim_json_warnings*
+						*g:vim_json_warnings*
 
 The json syntax file provides syntax highlighting with conceal support by
 default. To disable concealment: >
@@ -1711,6 +1748,20 @@ Lace (Language for Assembly of Classes in Eiffel) is case insensitive, but the
 style guide lines are not.  If you prefer case insensitive highlighting, just
 define the vim variable 'lace_case_insensitive' in your startup file: >
 	:let lace_case_insensitive=1
+
+
+LF (LFRC)		*lf.vim* *ft-lf-syntax* *g:lf_shell_syntax*
+						*b:lf_shell_syntax*
+
+For the lf file manager configuration files (lfrc) the shell commands
+syntax highlighting can be changed globally and per buffer by setting
+a different 'include' command search pattern using these variables:
+	let g:lf_shell_syntax = "syntax/dosbatch.vim"
+	let b:lf_shell_syntax = "syntax/zsh.vim"
+
+These variables are unset by default.
+
+The default 'include' command search pattern is 'syntax/sh.vim'.
 
 
 LEX						*lex.vim* *ft-lex-syntax*
@@ -2013,6 +2064,12 @@ set "msql_minlines" to the value you desire.  Example: >
 
 	:let msql_minlines = 200
 
+
+NEOMUTT			*neomutt.vim* *ft-neomuttrc-syntax* *ft-neomuttlog-syntax*
+
+To disable the default NeoMutt log colors >
+
+	:let g:neolog_disable_default_colors = 1
 
 N1QL						*n1ql.vim* *ft-n1ql-syntax*
 
@@ -5055,10 +5112,12 @@ guisp={color-name}					*guisp*
 	All values are hexadecimal, range from "00" to "ff".  Examples: >
 	    :highlight Comment guifg=#11f0c3 guibg=#ff00ff
 <
-blend={integer}					*highlight-blend*
+blend={integer}					*highlight-blend* *opacity*
 	Override the blend level for a highlight group within the popupmenu
 	or floating windows. Only takes effect if 'pumblend' or 'winblend'
 	is set for the menu or window. See the help at the respective option.
+
+	See also the "blend" flag of |nvim_buf_set_extmark()|.
 
 					*highlight-groups* *highlight-default*
 These are the builtin highlighting groups.  Note that the highlighting depends
@@ -5163,7 +5222,7 @@ NormalNC	Normal text in non-current windows.
 							*hl-Pmenu*
 Pmenu		Popup menu: Normal item.
 							*hl-PmenuSel*
-PmenuSel	Popup menu: Selected item.
+PmenuSel	Popup menu: Selected item. Combined with |hl-Pmenu|.
 							*hl-PmenuKind*
 PmenuKind	Popup menu: Normal item "kind".
 							*hl-PmenuKindSel*
@@ -5177,9 +5236,11 @@ PmenuSbar	Popup menu: Scrollbar.
 							*hl-PmenuThumb*
 PmenuThumb	Popup menu: Thumb of the scrollbar.
 							*hl-PmenuMatch*
-PmenuMatch	Popup menu: Matched text in normal item.
+PmenuMatch	Popup menu: Matched text in normal item. Combined with
+		|hl-Pmenu|.
 							*hl-PmenuMatchSel*
-PmenuMatchSel	Popup menu: Matched text in selected item.
+PmenuMatchSel	Popup menu: Matched text in selected item. Combined with
+		|hl-PmenuMatch| and |hl-PmenuSel|.
 							*hl-Question*
 Question	|hit-enter| prompt and yes/no questions.
 							*hl-QuickFixLine*
@@ -5411,7 +5472,8 @@ This will set the "w:current_syntax" variable to "foo".  The value of
 restoring "b:current_syntax", since the syntax files do set
 "b:current_syntax".  The value set by the syntax file is assigned to
 "w:current_syntax".
-Note: This resets the 'spell', 'spellcapcheck' and 'spellfile' options.
+Note: This resets the 'spell', 'spellcapcheck', 'spellfile' and 'spelloptions'
+options.
 
 Once a window has its own syntax, syntax commands executed from other windows
 on the same buffer (including :syntax clear) have no effect. Conversely,

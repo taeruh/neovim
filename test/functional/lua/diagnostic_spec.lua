@@ -1,7 +1,6 @@
 local t = require('test.testutil')
 local n = require('test.functional.testnvim')()
 
-local NIL = vim.NIL
 local command = n.command
 local clear = n.clear
 local exec_lua = n.exec_lua
@@ -112,6 +111,19 @@ describe('vim.diagnostic', function()
           { details = true }
         )
       end
+
+      ---@param ns integer
+      function _G.get_underline_extmarks(ns)
+        ---@type integer
+        local underline_ns = vim.diagnostic.get_namespace(ns).user_data.underline_ns
+        return vim.api.nvim_buf_get_extmarks(
+          _G.diagnostic_bufnr,
+          underline_ns,
+          0,
+          -1,
+          { details = true }
+        )
+      end
     end)
 
     exec_lua(function()
@@ -175,11 +187,11 @@ describe('vim.diagnostic', function()
     eq(3, #result)
     eq(
       2,
-      exec_lua(function(result0)
+      exec_lua(function()
         return #vim.tbl_filter(function(d)
           return d.bufnr == _G.diagnostic_bufnr
-        end, result0)
-      end, result)
+        end, result)
+      end)
     )
     eq('Diagnostic #1', result[1].message)
   end)
@@ -792,7 +804,7 @@ describe('vim.diagnostic', function()
 
     --- @return table
     local function test_enable(legacy)
-      local result = exec_lua(function(legacy0)
+      return exec_lua(function()
         local other_bufnr = vim.api.nvim_create_buf(true, false)
 
         vim.api.nvim_win_set_buf(0, _G.diagnostic_bufnr)
@@ -823,7 +835,7 @@ describe('vim.diagnostic', function()
             + _G.count_extmarks(other_bufnr, _G.diagnostic_ns)
         )
 
-        if legacy0 then
+        if legacy then
           vim.diagnostic.disable(_G.diagnostic_bufnr, _G.diagnostic_ns)
         else
           vim.diagnostic.enable(false, { bufnr = _G.diagnostic_bufnr, ns_id = _G.diagnostic_ns })
@@ -836,7 +848,7 @@ describe('vim.diagnostic', function()
             + _G.count_extmarks(other_bufnr, _G.diagnostic_ns)
         )
 
-        if legacy0 then
+        if legacy then
           vim.diagnostic.disable(_G.diagnostic_bufnr, _G.other_ns)
         else
           vim.diagnostic.enable(false, { bufnr = _G.diagnostic_bufnr, ns_id = _G.other_ns })
@@ -849,7 +861,7 @@ describe('vim.diagnostic', function()
             + _G.count_extmarks(other_bufnr, _G.diagnostic_ns)
         )
 
-        if legacy0 then
+        if legacy then
           vim.diagnostic.enable(_G.diagnostic_bufnr, _G.diagnostic_ns)
         else
           vim.diagnostic.enable(true, { bufnr = _G.diagnostic_bufnr, ns_id = _G.diagnostic_ns })
@@ -862,7 +874,7 @@ describe('vim.diagnostic', function()
             + _G.count_extmarks(other_bufnr, _G.diagnostic_ns)
         )
 
-        if legacy0 then
+        if legacy then
           -- Should have no effect
           vim.diagnostic.disable(other_bufnr, _G.other_ns)
         else
@@ -878,9 +890,7 @@ describe('vim.diagnostic', function()
         )
 
         return result
-      end, legacy)
-
-      return result
+      end)
     end
 
     it('with both buffer and namespace arguments', function()
@@ -1052,7 +1062,7 @@ describe('vim.diagnostic', function()
 
     it('will not cycle when wrap is off', function()
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Diagnostic #1', 1, 1, 1, 1),
@@ -1261,7 +1271,7 @@ describe('vim.diagnostic', function()
 
     it('respects wrap parameter', function()
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Diagnostic #2', 4, 4, 4, 4),
@@ -1514,12 +1524,14 @@ describe('vim.diagnostic', function()
   describe('count', function()
     it('returns actually present severity counts', function()
       eq(
-        exec_lua [[return {
-          [vim.diagnostic.severity.ERROR] = 4,
-          [vim.diagnostic.severity.WARN] = 3,
-          [vim.diagnostic.severity.INFO] = 2,
-          [vim.diagnostic.severity.HINT] = 1,
-        }]],
+        exec_lua(function()
+          return {
+            [vim.diagnostic.severity.ERROR] = 4,
+            [vim.diagnostic.severity.WARN] = 3,
+            [vim.diagnostic.severity.INFO] = 2,
+            [vim.diagnostic.severity.HINT] = 1,
+          }
+        end),
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Error 1', 1, 1, 1, 2),
@@ -1537,10 +1549,12 @@ describe('vim.diagnostic', function()
         end)
       )
       eq(
-        exec_lua [[return {
-          [vim.diagnostic.severity.ERROR] = 2,
-          [vim.diagnostic.severity.INFO] = 1,
-        }]],
+        exec_lua(function()
+          return {
+            [vim.diagnostic.severity.ERROR] = 2,
+            [vim.diagnostic.severity.INFO] = 1,
+          }
+        end),
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Error 1', 1, 1, 1, 2),
@@ -1554,11 +1568,17 @@ describe('vim.diagnostic', function()
 
     it('returns only requested diagnostics count when severity range is supplied', function()
       eq(
-        exec_lua [[return {
-          { [vim.diagnostic.severity.ERROR] = 1, [vim.diagnostic.severity.WARN] = 1 },
-          { [vim.diagnostic.severity.WARN] = 1,  [vim.diagnostic.severity.INFO] = 1, [vim.diagnostic.severity.HINT] = 1 },
-          { [vim.diagnostic.severity.WARN] = 1,  [vim.diagnostic.severity.INFO] = 1 },
-        }]],
+        exec_lua(function()
+          return {
+            { [vim.diagnostic.severity.ERROR] = 1, [vim.diagnostic.severity.WARN] = 1 },
+            {
+              [vim.diagnostic.severity.WARN] = 1,
+              [vim.diagnostic.severity.INFO] = 1,
+              [vim.diagnostic.severity.HINT] = 1,
+            },
+            { [vim.diagnostic.severity.WARN] = 1, [vim.diagnostic.severity.INFO] = 1 },
+          }
+        end),
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Error 1', 1, 1, 1, 5),
@@ -1589,11 +1609,13 @@ describe('vim.diagnostic', function()
 
     it('returns only requested diagnostics when severities are supplied', function()
       eq(
-        exec_lua [[return {
-          { [vim.diagnostic.severity.WARN] = 1 },
-          { [vim.diagnostic.severity.ERROR] = 1 },
-          { [vim.diagnostic.severity.WARN] = 1, [vim.diagnostic.severity.INFO] = 1 },
-        }]],
+        exec_lua(function()
+          return {
+            { [vim.diagnostic.severity.WARN] = 1 },
+            { [vim.diagnostic.severity.ERROR] = 1 },
+            { [vim.diagnostic.severity.WARN] = 1, [vim.diagnostic.severity.INFO] = 1 },
+          }
+        end),
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Error 1', 1, 1, 1, 5),
@@ -1624,10 +1646,12 @@ describe('vim.diagnostic', function()
 
     it('allows filtering by line', function()
       eq(
-        exec_lua [[return {
-          [vim.diagnostic.severity.WARN] = 1,
-          [vim.diagnostic.severity.INFO] = 1,
-        }]],
+        exec_lua(function()
+          return {
+            [vim.diagnostic.severity.WARN] = 1,
+            [vim.diagnostic.severity.INFO] = 1,
+          }
+        end),
         exec_lua(function()
           vim.diagnostic.set(_G.diagnostic_ns, _G.diagnostic_bufnr, {
             _G.make_error('Error 1', 1, 1, 1, 5),
@@ -1764,11 +1788,11 @@ describe('vim.diagnostic', function()
 
     it('allows filtering by severity', function()
       local get_extmark_count_with_severity = function(min_severity)
-        return exec_lua(function(min_severity0)
+        return exec_lua(function()
           vim.diagnostic.config({
             underline = false,
             virtual_text = {
-              severity = { min = min_severity0 },
+              severity = { min = min_severity },
             },
           })
 
@@ -1777,7 +1801,7 @@ describe('vim.diagnostic', function()
           })
 
           return _G.count_extmarks(_G.diagnostic_bufnr, _G.diagnostic_ns)
-        end, min_severity)
+        end)
       end
 
       -- No messages with Error or higher
@@ -1801,6 +1825,21 @@ describe('vim.diagnostic', function()
           _G.make_error('Error', 4, 4, 4, 4),
           _G.make_info('Info', 4, 4, 4, 4),
         })
+
+        function _G.get_highest_underline_hl(severity_sort)
+          vim.diagnostic.config({
+            underline = true,
+            severity_sort = severity_sort,
+          })
+
+          local extmarks = _G.get_underline_extmarks(_G.diagnostic_ns)
+
+          table.sort(extmarks, function(a, b)
+            return a[4].priority > b[4].priority
+          end)
+
+          return extmarks[1][4].hl_group
+        end
 
         function _G.get_virt_text_and_signs(severity_sort)
           vim.diagnostic.config({
@@ -1853,6 +1892,12 @@ describe('vim.diagnostic', function()
       result = exec_lua [[return _G.get_virt_text_and_signs({ reverse = true })]]
       eq({ 'Error', 'Warn', 'Info' }, result[1])
       eq({ 'Info', 'Warn', 'Error' }, result[2])
+
+      local underline_hl = exec_lua [[return _G.get_highest_underline_hl(true)]]
+      eq('DiagnosticUnderlineError', underline_hl)
+
+      underline_hl = exec_lua [[return _G.get_highest_underline_hl({ reverse = true })]]
+      eq('DiagnosticUnderlineInfo', underline_hl)
     end)
 
     it('can show diagnostic sources in virtual text', function()
@@ -2512,7 +2557,7 @@ describe('vim.diagnostic', function()
 
       -- End position is exclusive
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           local diagnostics = {
             _G.make_error('Syntax error', 1, 1, 2, 0),
@@ -2606,7 +2651,7 @@ describe('vim.diagnostic', function()
 
       -- End position is exclusive
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           local diagnostics = {
             _G.make_error('Syntax error', 1, 1, 1, 3),
@@ -2851,10 +2896,10 @@ describe('vim.diagnostic', function()
 
     it('can filter by severity', function()
       local count_diagnostics_with_severity = function(min_severity, max_severity)
-        return exec_lua(function(min_severity0, max_severity0)
+        return exec_lua(function()
           vim.diagnostic.config({
             float = {
-              severity = { min = min_severity0, max = max_severity0 },
+              severity = { min = min_severity, max = max_severity },
             },
           })
 
@@ -2874,7 +2919,7 @@ describe('vim.diagnostic', function()
           local lines = vim.api.nvim_buf_get_lines(float_bufnr, 0, -1, false)
           vim.api.nvim_win_close(winnr, true)
           return #lines
-        end, min_severity, max_severity)
+        end)
       end
 
       eq(2, count_diagnostics_with_severity('ERROR'))
@@ -3060,7 +3105,7 @@ describe('vim.diagnostic', function()
 
       -- open float failed non diagnostic lnum
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           vim.api.nvim_win_set_cursor(0, { 1, 0 })
           local _, winnr = vim.diagnostic.open_float(0, { header = false })
@@ -3068,7 +3113,7 @@ describe('vim.diagnostic', function()
         end)
       )
       eq(
-        vim.NIL,
+        nil,
         exec_lua(function()
           vim.api.nvim_win_set_cursor(0, { 1, 0 })
           local _, winnr = vim.diagnostic.open_float(0, { header = false, scope = 'cursor' })
@@ -3180,19 +3225,19 @@ describe('vim.diagnostic', function()
       }
       eq(
         diagnostic,
-        exec_lua(function(msg0)
+        exec_lua(function()
           return vim.diagnostic.match(
-            msg0,
+            msg,
             '^(%w+): [^:]+:(%d+):(%d+):(.+)$',
             { 'severity', 'lnum', 'col', 'message' }
           )
-        end, msg)
+        end)
       )
     end)
 
     it('returns nil if the pattern fails to match', function()
       eq(
-        NIL,
+        nil,
         exec_lua(function()
           local msg = 'The answer to life, the universe, and everything is'
           return vim.diagnostic.match(msg, 'This definitely will not match', {})
@@ -3212,15 +3257,15 @@ describe('vim.diagnostic', function()
       }
       eq(
         diagnostic,
-        exec_lua(function(msg0)
+        exec_lua(function()
           return vim.diagnostic.match(
-            msg0,
+            msg,
             '^[^:]+:(%d+):(.+)$',
             { 'lnum', 'message' },
             nil,
             { severity = vim.diagnostic.severity.INFO }
           )
-        end, msg)
+        end)
       )
     end)
 
@@ -3236,14 +3281,14 @@ describe('vim.diagnostic', function()
       }
       eq(
         diagnostic,
-        exec_lua(function(msg0)
+        exec_lua(function()
           return vim.diagnostic.match(
-            msg0,
+            msg,
             '^(%d+):(%w+):(.+)$',
             { 'lnum', 'severity', 'message' },
             { FATAL = vim.diagnostic.severity.ERROR }
           )
-        end, msg)
+        end)
       )
     end)
   end)

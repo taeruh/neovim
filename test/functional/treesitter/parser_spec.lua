@@ -42,13 +42,13 @@ describe('treesitter parser API', function()
     eq('function_definition', exec_lua('return child:type()'))
     eq(true, exec_lua('return child:named()'))
     eq('number', type(exec_lua('return child:symbol()')))
-    eq({ 'function_definition', true }, exec_lua('return lang.symbols[child:symbol()]'))
+    eq(true, exec_lua('return lang.symbols[child:type()]'))
 
     exec_lua('anon = root:descendant_for_range(0,8,0,9)')
     eq('(', exec_lua('return anon:type()'))
     eq(false, exec_lua('return anon:named()'))
     eq('number', type(exec_lua('return anon:symbol()')))
-    eq({ '(', false }, exec_lua('return lang.symbols[anon:symbol()]'))
+    eq(false, exec_lua([=[return lang.symbols[string.format('"%s"', anon:type())]]=]))
 
     exec_lua('descendant = root:descendant_for_range(1,2,1,12)')
     eq('<node declaration>', exec_lua('return tostring(descendant)'))
@@ -135,9 +135,7 @@ void ui_refresh(void)
     insert(test_text)
 
     eq(
-      '.../treesitter.lua:0: There is no parser available for buffer 1 and one'
-        .. ' could not be created because lang could not be determined. Either'
-        .. ' pass lang or set the buffer filetype',
+      '.../treesitter.lua:0: Parser not found for buffer 1: language could not be determined',
       pcall_err(exec_lua, 'vim.treesitter.get_parser(0)')
     )
 
@@ -591,8 +589,7 @@ print()
             vim.treesitter.query.parse('c', '((number_literal) @number (#set! "key" "value"))')
           local parser = vim.treesitter.get_parser(0, 'c')
 
-          local _, _, metadata =
-            query:iter_matches(parser:parse()[1]:root(), 0, 0, -1, { all = true })()
+          local _, _, metadata = query:iter_matches(parser:parse()[1]:root(), 0, 0, -1)()
           return metadata.key
         end)
 
@@ -612,8 +609,7 @@ print()
             )
             local parser = vim.treesitter.get_parser(0, 'c')
 
-            local _, _, metadata =
-              query:iter_matches(parser:parse()[1]:root(), 0, 0, -1, { all = true })()
+            local _, _, metadata = query:iter_matches(parser:parse()[1]:root(), 0, 0, -1)()
             local _, nested_tbl = next(metadata)
             return nested_tbl.key
           end)
@@ -633,8 +629,7 @@ print()
             )
             local parser = vim.treesitter.get_parser(0, 'c')
 
-            local _, _, metadata =
-              query:iter_matches(parser:parse()[1]:root(), 0, 0, -1, { all = true })()
+            local _, _, metadata = query:iter_matches(parser:parse()[1]:root(), 0, 0, -1)()
             local _, nested_tbl = next(metadata)
             return nested_tbl
           end)
@@ -665,8 +660,8 @@ print()
     end)
 
     local function run_query()
-      return exec_lua(function(query_str)
-        local query = vim.treesitter.query.parse('c', query_str)
+      return exec_lua(function()
+        local query = vim.treesitter.query.parse('c', query0)
         local parser = vim.treesitter.get_parser()
         local tree = parser:parse()[1]
         local res = {}
@@ -674,7 +669,7 @@ print()
           table.insert(res, { query.captures[id], node:range() })
         end
         return res
-      end, query0)
+      end)
     end
 
     eq({
@@ -712,15 +707,15 @@ print()
       ]]
     ]==]
 
-    local r = exec_lua(function(src)
-      local parser = vim.treesitter.get_string_parser(src, 'lua')
+    local r = exec_lua(function()
+      local parser = vim.treesitter.get_string_parser(source, 'lua')
       parser:parse(true)
       local ranges = {}
       parser:for_each_tree(function(tstree, tree)
         ranges[tree:lang()] = { tstree:root():range(true) }
       end)
       return ranges
-    end, source)
+    end)
 
     eq({
       lua = { 0, 6, 6, 16, 4, 438 },
@@ -732,14 +727,14 @@ print()
     -- the ranges but only provide a Range4. Strip the byte entries from the ranges and make sure
     -- add_bytes() produces the same result.
 
-    local rb = exec_lua(function(r0, source0)
+    local rb = exec_lua(function()
       local add_bytes = require('vim.treesitter._range').add_bytes
-      for lang, range in pairs(r0) do
-        r0[lang] = { range[1], range[2], range[4], range[5] }
-        r0[lang] = add_bytes(source0, r0[lang])
+      for lang, range in pairs(r) do
+        r[lang] = { range[1], range[2], range[4], range[5] }
+        r[lang] = add_bytes(source, r[lang])
       end
-      return r0
-    end, r, source)
+      return r
+    end)
 
     eq(rb, r)
   end)

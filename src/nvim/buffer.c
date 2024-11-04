@@ -255,7 +255,7 @@ int open_buffer(bool read_stdin, exarg_T *eap, int flags_arg)
     emsg(_("E83: Cannot allocate buffer, using other one..."));
     enter_buffer(curbuf);
     if (old_tw != curbuf->b_p_tw) {
-      check_colorcolumn(curwin);
+      check_colorcolumn(NULL, curwin);
     }
     return FAIL;
   }
@@ -476,6 +476,11 @@ static bool can_unload_buffer(buf_T *buf)
           fname != NULL ? fname : "[No Name]");
   }
   return can_unload;
+}
+
+bool buf_locked(buf_T *buf)
+{
+  return buf->b_locked || buf->b_locked_split;
 }
 
 /// Close the link to a buffer.
@@ -1024,7 +1029,7 @@ void handle_swap_exists(bufref_T *old_curbuf)
       enter_buffer(buf);
 
       if (old_tw != curbuf->b_p_tw) {
-        check_colorcolumn(curwin);
+        check_colorcolumn(NULL, curwin);
       }
     }
     // If "old_curbuf" is NULL we are in big trouble here...
@@ -1388,7 +1393,7 @@ static int do_buffer_ext(int action, int start, int dir, int count, int flags)
 
     // If the buffer to be deleted is not the current one, delete it here.
     if (buf != curbuf) {
-      if (jop_flags & JOP_UNLOAD) {
+      if (jop_flags & JOP_CLEAN) {
         // Remove the buffer to be deleted from the jump list.
         mark_jumplist_forget_file(curwin, buf_fnum);
       }
@@ -1414,7 +1419,7 @@ static int do_buffer_ext(int action, int start, int dir, int count, int flags)
     if (au_new_curbuf.br_buf != NULL && bufref_valid(&au_new_curbuf)) {
       buf = au_new_curbuf.br_buf;
     } else if (curwin->w_jumplistlen > 0) {
-      if (jop_flags & JOP_UNLOAD) {
+      if (jop_flags & JOP_CLEAN) {
         // Remove the buffer from the jump list.
         mark_jumplist_forget_file(curwin, buf_fnum);
       }
@@ -1424,7 +1429,7 @@ static int do_buffer_ext(int action, int start, int dir, int count, int flags)
       if (curwin->w_jumplistlen > 0) {
         int jumpidx = curwin->w_jumplistidx;
 
-        if (jop_flags & JOP_UNLOAD) {
+        if (jop_flags & JOP_CLEAN) {
           // If the index is the same as the length, the current position was not yet added to the
           // jump list. So we can safely go back to the last entry and search from there.
           if (jumpidx == curwin->w_jumplistlen) {
@@ -1438,7 +1443,7 @@ static int do_buffer_ext(int action, int start, int dir, int count, int flags)
         }
 
         forward = jumpidx;
-        while ((jop_flags & JOP_UNLOAD) || jumpidx != curwin->w_jumplistidx) {
+        while ((jop_flags & JOP_CLEAN) || jumpidx != curwin->w_jumplistidx) {
           buf = buflist_findnr(curwin->w_jumplist[jumpidx].fmark.fnum);
 
           if (buf != NULL) {
@@ -1455,7 +1460,7 @@ static int do_buffer_ext(int action, int start, int dir, int count, int flags)
             }
           }
           if (buf != NULL) {         // found a valid buffer: stop searching
-            if (jop_flags & JOP_UNLOAD) {
+            if (jop_flags & JOP_CLEAN) {
               curwin->w_jumplistidx = jumpidx;
               update_jumplist = false;
             }
@@ -1664,7 +1669,7 @@ void set_curbuf(buf_T *buf, int action, bool update_jumplist)
     // enter some buffer.  Using the last one is hopefully OK.
     enter_buffer(valid ? buf : lastbuf);
     if (old_tw != curbuf->b_p_tw) {
-      check_colorcolumn(curwin);
+      check_colorcolumn(NULL, curwin);
     }
   }
 
@@ -2092,6 +2097,8 @@ void free_buf_options(buf_T *buf, bool free_p_ff)
   clear_string_option(&buf->b_p_tc);
   clear_string_option(&buf->b_p_tfu);
   callback_free(&buf->b_tfu_cb);
+  clear_string_option(&buf->b_p_ffu);
+  callback_free(&buf->b_ffu_cb);
   clear_string_option(&buf->b_p_dict);
   clear_string_option(&buf->b_p_tsr);
   clear_string_option(&buf->b_p_qe);
@@ -2980,7 +2987,7 @@ int setfname(buf_T *buf, char *ffname_arg, char *sfname_arg, bool message)
       close_buffer(NULL, obuf, DOBUF_WIPE, false, false);
     }
     sfname = xstrdup(sfname);
-#ifdef USE_FNAME_CASE
+#ifdef CASE_INSENSITIVE_FILENAME
     path_fix_case(sfname);            // set correct case for short file name
 #endif
     if (buf->b_sfname != buf->b_ffname) {
@@ -3338,7 +3345,7 @@ void maketitle(void)
 
 #define SPACE_FOR_FNAME (sizeof(buf) - 100)
 #define SPACE_FOR_DIR   (sizeof(buf) - 20)
-#define SPACE_FOR_ARGNR (sizeof(buf) - 10)  // At least room for " - NVIM".
+#define SPACE_FOR_ARGNR (sizeof(buf) - 10)  // At least room for " - Nvim".
       char *buf_p = buf;
       if (curbuf->b_fname == NULL) {
         const size_t size = xstrlcpy(buf_p, _("[No Name]"),
@@ -3412,7 +3419,7 @@ void maketitle(void)
 
       append_arg_number(curwin, buf_p, (int)(SPACE_FOR_ARGNR - (size_t)(buf_p - buf)));
 
-      xstrlcat(buf_p, " - NVIM", (sizeof(buf) - (size_t)(buf_p - buf)));
+      xstrlcat(buf_p, " - Nvim", (sizeof(buf) - (size_t)(buf_p - buf)));
 
       if (maxlen > 0) {
         // Make it shorter by removing a bit in the middle.
@@ -3715,7 +3722,7 @@ void ex_buffer_all(exarg_T *eap)
 
       // Open the buffer in this window.
       swap_exists_action = SEA_DIALOG;
-      set_curbuf(buf, DOBUF_GOTO, !(jop_flags & JOP_UNLOAD));
+      set_curbuf(buf, DOBUF_GOTO, !(jop_flags & JOP_CLEAN));
       if (!bufref_valid(&bufref)) {
         // Autocommands deleted the buffer.
         swap_exists_action = SEA_NONE;

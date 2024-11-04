@@ -18,36 +18,29 @@ local create_server_definition = t_lsp.create_server_definition
 ---@param candidates lsp.CompletionList|lsp.CompletionItem[]
 ---@param lnum? integer 0-based, defaults to 0
 ---@return {items: table[], server_start_boundary: integer?}
-local function complete(line, candidates, lnum)
+local function complete(line, candidates, lnum, server_boundary)
   lnum = lnum or 0
   -- nvim_win_get_cursor returns 0 based column, line:find returns 1 based
   local cursor_col = line:find('|') - 1
   line = line:gsub('|', '')
-  return exec_lua(
-    [[
-    local line, cursor_col, lnum, result = ...
+  return exec_lua(function(result)
     local line_to_cursor = line:sub(1, cursor_col)
     local client_start_boundary = vim.fn.match(line_to_cursor, '\\k*$')
-    local items, server_start_boundary = require("vim.lsp.completion")._convert_results(
+    local items, new_server_boundary = require('vim.lsp.completion')._convert_results(
       line,
       lnum,
       cursor_col,
       1,
       client_start_boundary,
-      nil,
+      server_boundary,
       result,
-      "utf-16"
+      'utf-16'
     )
     return {
       items = items,
-      server_start_boundary = server_start_boundary
+      server_start_boundary = new_server_boundary,
     }
-  ]],
-    line,
-    cursor_col,
-    lnum,
-    candidates
-  )
+  end, candidates)
 end
 
 describe('vim.lsp.completion: item conversion', function()
@@ -151,6 +144,26 @@ describe('vim.lsp.completion: item conversion', function()
       {
         abbr = 'foo',
         word = 'foo',
+      },
+    }
+    result = vim.tbl_map(function(x)
+      return {
+        abbr = x.abbr,
+        word = x.word,
+      }
+    end, result.items)
+    eq(expected, result)
+  end)
+
+  it('works on non word prefix', function()
+    local completion_list = {
+      { label = ' foo', insertText = '->foo' },
+    }
+    local result = complete('wp.|', completion_list, 0, 2)
+    local expected = {
+      {
+        abbr = ' foo',
+        word = '->foo',
       },
     }
     result = vim.tbl_map(function(x)
@@ -307,7 +320,7 @@ describe('vim.lsp.completion: item conversion', function()
       info = '',
       kind = 'Module',
       menu = '',
-      hl_group = '',
+      abbr_hlgroup = '',
       word = 'this_thread',
     }
     local result = complete('  std::this|', completion_list)
@@ -363,7 +376,7 @@ describe('vim.lsp.completion: item conversion', function()
       info = '',
       kind = 'Module',
       menu = '',
-      hl_group = '',
+      abbr_hlgroup = '',
       word = 'this_thread',
     }
     local result = complete('  std::this|is', completion_list)
@@ -458,49 +471,54 @@ describe('vim.lsp.completion: item conversion', function()
   )
 end)
 
+--- @param completion_result lsp.CompletionList
+--- @return integer
+local function create_server(completion_result)
+  return exec_lua(function()
+    local server = _G._create_server({
+      capabilities = {
+        completionProvider = {
+          triggerCharacters = { '.' },
+        },
+      },
+      handlers = {
+        ['textDocument/completion'] = function(_, _, callback)
+          callback(nil, completion_result)
+        end,
+      },
+    })
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    vim.api.nvim_win_set_buf(0, bufnr)
+    return vim.lsp.start({
+      name = 'dummy',
+      cmd = server.cmd,
+      on_attach = function(client, bufnr0)
+        vim.lsp.completion.enable(true, client.id, bufnr0, {
+          convert = function(item)
+            return { abbr = item.label:gsub('%b()', '') }
+          end,
+        })
+      end,
+    })
+  end)
+end
+
 describe('vim.lsp.completion: protocol', function()
   before_each(function()
     clear()
     exec_lua(create_server_definition)
-    exec_lua([[
+    exec_lua(function()
       _G.capture = {}
+      --- @diagnostic disable-next-line:duplicate-set-field
       vim.fn.complete = function(col, matches)
         _G.capture.col = col
         _G.capture.matches = matches
       end
-    ]])
+    end)
   end)
 
   after_each(clear)
-
-  --- @param completion_result lsp.CompletionList
-  --- @return integer
-  local function create_server(completion_result)
-    return exec_lua(
-      [[
-      local result = ...
-      local server = _create_server({
-        capabilities = {
-          completionProvider = {
-            triggerCharacters = { '.' }
-          }
-        },
-        handlers = {
-          ['textDocument/completion'] = function(_, _, callback)
-            callback(nil, result)
-          end
-        }
-      })
-
-      bufnr = vim.api.nvim_get_current_buf()
-      vim.api.nvim_win_set_buf(0, bufnr)
-      return vim.lsp.start({ name = 'dummy', cmd = server.cmd, on_attach = function(client, bufnr)
-        vim.lsp.completion.enable(true, client.id, bufnr)
-      end})
-    ]],
-      completion_result
-    )
-  end
 
   local function assert_matches(fn)
     retry(nil, nil, function()
@@ -510,14 +528,11 @@ describe('vim.lsp.completion: protocol', function()
 
   --- @param pos [integer, integer]
   local function trigger_at_pos(pos)
-    exec_lua(
-      [[
+    exec_lua(function()
       local win = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_cursor(win, ...)
+      vim.api.nvim_win_set_cursor(win, pos)
       vim.lsp.completion.trigger()
-    ]],
-      pos
-    )
+    end)
 
     retry(nil, nil, function()
       neq(nil, exec_lua('return _G.capture.col'))
@@ -555,7 +570,7 @@ describe('vim.lsp.completion: protocol', function()
           info = '',
           kind = 'Unknown',
           menu = '',
-          hl_group = '',
+          abbr_hlgroup = '',
           user_data = {
             nvim = {
               lsp = {
@@ -576,7 +591,7 @@ describe('vim.lsp.completion: protocol', function()
           info = '',
           kind = 'Unknown',
           menu = '',
-          hl_group = 'DiagnosticDeprecated',
+          abbr_hlgroup = 'DiagnosticDeprecated',
           user_data = {
             nvim = {
               lsp = {
@@ -598,7 +613,7 @@ describe('vim.lsp.completion: protocol', function()
           info = '',
           kind = 'Unknown',
           menu = '',
-          hl_group = 'DiagnosticDeprecated',
+          abbr_hlgroup = 'DiagnosticDeprecated',
           user_data = {
             nvim = {
               lsp = {
@@ -660,37 +675,30 @@ describe('vim.lsp.completion: protocol', function()
     }
     local client_id = create_server(completion_list)
 
-    exec_lua(
-      [[
+    exec_lua(function()
       _G.called = false
-      local client = vim.lsp.get_client_by_id(...)
-      client.commands.dummy = function ()
+      local client = assert(vim.lsp.get_client_by_id(client_id))
+      client.commands.dummy = function()
         _G.called = true
       end
-    ]],
-      client_id
-    )
+    end)
 
     feed('ih')
     trigger_at_pos({ 1, 1 })
 
-    exec_lua(
-      [[
-      local client_id, item = ...
+    local item = completion_list.items[1]
+    exec_lua(function()
       vim.v.completed_item = {
         user_data = {
           nvim = {
             lsp = {
               client_id = client_id,
-              completion_item = item
-            }
-          }
-        }
+              completion_item = item,
+            },
+          },
+        },
       }
-    ]],
-      client_id,
-      completion_list.items[1]
-    )
+    end)
 
     feed('<C-x><C-o><C-y>')
 
@@ -699,5 +707,77 @@ describe('vim.lsp.completion: protocol', function()
       eq('hello', matches[1].word)
       eq(true, exec_lua('return _G.called'))
     end)
+  end)
+
+  it('enable(…,{convert=fn}) custom word/abbr format', function()
+    create_server({
+      isIncomplete = false,
+      items = {
+        {
+          label = 'foo(bar)',
+        },
+      },
+    })
+
+    feed('ifo')
+    trigger_at_pos({ 1, 1 })
+    assert_matches(function(matches)
+      eq('foo', matches[1].abbr)
+    end)
+  end)
+end)
+
+describe('vim.lsp.completion: integration', function()
+  before_each(function()
+    clear()
+    exec_lua(create_server_definition)
+    exec_lua(function()
+      vim.fn.complete = vim.schedule_wrap(vim.fn.complete)
+    end)
+  end)
+
+  after_each(clear)
+
+  it('puts cursor at the end of completed word', function()
+    local completion_list = {
+      isIncomplete = false,
+      items = {
+        {
+          label = 'hello',
+          insertText = '${1:hello} friends',
+          insertTextFormat = 2,
+        },
+      },
+    }
+    exec_lua(function()
+      vim.o.completeopt = 'menuone,noselect'
+    end)
+    create_server(completion_list)
+    feed('i world<esc>0ih<c-x><c-o>')
+    retry(nil, nil, function()
+      eq(
+        1,
+        exec_lua(function()
+          return vim.fn.pumvisible()
+        end)
+      )
+    end)
+    feed('<C-n><C-y>')
+    eq(
+      { true, { 'hello friends world' } },
+      exec_lua(function()
+        return {
+          vim.snippet.active({ direction = 1 }),
+          vim.api.nvim_buf_get_lines(0, 0, -1, true),
+        }
+      end)
+    )
+    feed('<tab>')
+    eq(
+      #'hello friends',
+      exec_lua(function()
+        return vim.api.nvim_win_get_cursor(0)[2]
+      end)
+    )
   end)
 end)

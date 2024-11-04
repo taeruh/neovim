@@ -37,23 +37,22 @@ local augroup = api.nvim_create_augroup('vim_lsp_inlayhint', {})
 ---@param result lsp.InlayHint[]?
 ---@param ctx lsp.HandlerContext
 ---@private
-function M.on_inlayhint(err, result, ctx, _)
+function M.on_inlayhint(err, result, ctx)
   if err then
     log.error('inlayhint', err)
     return
   end
   local bufnr = assert(ctx.bufnr)
-  if util.buf_versions[bufnr] ~= ctx.version then
+  if
+    util.buf_versions[bufnr] ~= ctx.version
+    or not result
+    or not api.nvim_buf_is_loaded(bufnr)
+    or not bufstates[bufnr].enabled
+  then
     return
   end
   local client_id = ctx.client_id
-  if not result then
-    return
-  end
   local bufstate = bufstates[bufnr]
-  if not bufstate.enabled then
-    return
-  end
   if not (bufstate.client_hints and bufstate.version) then
     bufstate.client_hints = vim.defaulttable()
     bufstate.version = ctx.version
@@ -71,25 +70,12 @@ function M.on_inlayhint(err, result, ctx, _)
   end
 
   local lines = api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  ---@param position lsp.Position
-  ---@return integer
-  local function pos_to_byte(position)
-    local col = position.character
-    if col > 0 then
-      local line = lines[position.line + 1] or ''
-      local ok, convert_result
-      ok, convert_result = pcall(util._str_byteindex_enc, line, col, client.offset_encoding)
-      if ok then
-        return convert_result
-      end
-      return math.min(#line, col)
-    end
-    return col
-  end
 
   for _, hint in ipairs(result) do
     local lnum = hint.position.line
-    hint.position.character = pos_to_byte(hint.position)
+    local line = lines and lines[lnum + 1] or ''
+    hint.position.character =
+      vim.str_byteindex(line, client.offset_encoding, hint.position.character, false)
     table.insert(new_lnum_hints[lnum], hint)
   end
 
@@ -101,7 +87,7 @@ end
 --- |lsp-handler| for the method `workspace/inlayHint/refresh`
 ---@param ctx lsp.HandlerContext
 ---@private
-function M.on_refresh(err, _, ctx, _)
+function M.on_refresh(err, _, ctx)
   if err then
     return vim.NIL
   end
@@ -151,7 +137,7 @@ end
 --- @return vim.lsp.inlay_hint.get.ret[]
 --- @since 12
 function M.get(filter)
-  vim.validate({ filter = { filter, 'table', true } })
+  vim.validate('filter', filter, 'table', true)
   filter = filter or {}
 
   local bufnr = filter.bufnr
@@ -381,11 +367,11 @@ api.nvim_set_decoration_provider(namespace, {
 --- @return boolean
 --- @since 12
 function M.is_enabled(filter)
-  vim.validate({ filter = { filter, 'table', true } })
+  vim.validate('filter', filter, 'table', true)
   filter = filter or {}
   local bufnr = filter.bufnr
 
-  vim.validate({ bufnr = { bufnr, 'number', true } })
+  vim.validate('bufnr', bufnr, 'number', true)
   if bufnr == nil then
     return globalstate.enabled
   elseif bufnr == 0 then
@@ -412,7 +398,8 @@ end
 --- @param filter vim.lsp.inlay_hint.enable.Filter?
 --- @since 12
 function M.enable(enable, filter)
-  vim.validate({ enable = { enable, 'boolean', true }, filter = { filter, 'table', true } })
+  vim.validate('enable', enable, 'boolean', true)
+  vim.validate('filter', filter, 'table', true)
   enable = enable == nil or enable
   filter = filter or {}
 

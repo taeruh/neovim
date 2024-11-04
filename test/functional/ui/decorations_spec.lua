@@ -1964,7 +1964,7 @@ describe('extmark decorations', function()
     ]]}
   end)
 
-  pending('highlight applies to a full TAB in visual block mode', function()
+  it('highlight applies to a full TAB in visual block mode', function()
     screen:try_resize(50, 8)
     command('hi! Visual guifg=NONE guibg=LightGrey')
     api.nvim_buf_set_lines(0, 0, -1, true, {'asdf', '\tasdf', '\tasdf', '\tasdf', 'asdf'})
@@ -5615,6 +5615,40 @@ l5
     screen:expect({
       grid = [[
         {8:1 }^                                                |
+        {1:~                                                 }|*8
+                                                          |
+      ]]
+    })
+  end)
+
+  it('supports emoji as signs', function()
+    insert(example_test3)
+    feed 'gg'
+    api.nvim_buf_set_extmark(0, ns, 1, 0, {sign_text='🧑‍🌾'})
+    -- VS16 can change width of character
+    api.nvim_buf_set_extmark(0, ns, 2, 0, {sign_text='❤️'})
+    api.nvim_buf_set_extmark(0, ns, 3, 0, {sign_text='❤'})
+    api.nvim_buf_set_extmark(0, ns, 4, 0, {sign_text='❤x'})
+    screen:expect([[
+      {7:  }^l1                                              |
+      🧑‍🌾l2                                              |
+      ❤️l3                                              |
+      ❤ l4                                              |
+      ❤xl5                                              |
+      {7:  }                                                |
+      {1:~                                                 }|*3
+                                                        |
+    ]])
+    eq("Invalid 'sign_text'", pcall_err(api.nvim_buf_set_extmark, 0, ns, 5, 0, {sign_text='❤️x'}))
+  end)
+
+  it('auto signcolumn hides with invalidated sign', function()
+    api.nvim_set_option_value('signcolumn', 'auto', {})
+    api.nvim_buf_set_extmark(0, ns, 0, 0, {sign_text='S1', invalidate=true})
+    feed('ia<cr>b<esc>dd')
+    screen:expect({
+      grid = [[
+        ^a                                                 |
         {1:~                                                 }|*8
                                                           |
       ]]

@@ -7,51 +7,6 @@
 
 // option_vars.h: definition of global variables for settable options
 
-// Option Flags
-#define P_ALLOCED      0x01U        ///< the option is in allocated memory,
-                                    ///< must use free_string_option() when
-                                    ///< assigning new value. Not set if default is
-                                    ///< the same.
-#define P_EXPAND       0x02U        ///< environment expansion.  NOTE: P_EXPAND can
-                                    ///< never be used for local or hidden options
-#define P_NO_DEF_EXP   0x04U        ///< do not expand default value
-#define P_NODEFAULT    0x08U        ///< don't set to default value
-#define P_DEF_ALLOCED  0x10U        ///< default value is in allocated memory, must
-                                    ///< use free() when assigning new value
-#define P_WAS_SET      0x20U        ///< option has been set/reset
-#define P_NO_MKRC      0x40U        ///< don't include in :mkvimrc output
-
-// when option changed, what to display:
-#define P_UI_OPTION    0x80U        ///< send option to remote UI
-#define P_RTABL        0x100U       ///< redraw tabline
-#define P_RSTAT        0x200U       ///< redraw status lines
-#define P_RWIN         0x400U       ///< redraw current window and recompute text
-#define P_RBUF         0x800U       ///< redraw current buffer and recompute text
-#define P_RALL         0xC00U       ///< redraw all windows and recompute text
-#define P_RCLR         0xE00U       ///< clear and redraw all and recompute text
-
-#define P_COMMA        0x1000U      ///< comma separated list
-#define P_ONECOMMA     0x3000U      ///< P_COMMA and cannot have two consecutive
-                                    ///< commas
-#define P_NODUP        0x4000U      ///< don't allow duplicate strings
-#define P_FLAGLIST     0x8000U      ///< list of single-char flags
-
-#define P_SECURE       0x10000U     ///< cannot change in modeline or secure mode
-#define P_GETTEXT      0x20000U     ///< expand default value with _()
-#define P_NOGLOB       0x40000U     ///< do not use local value for global vimrc
-#define P_NFNAME       0x80000U     ///< only normal file name chars allowed
-#define P_INSECURE     0x100000U    ///< option was set from a modeline
-#define P_PRI_MKRC     0x200000U    ///< priority for :mkvimrc (setting option
-                                    ///< has side effects)
-#define P_NO_ML        0x400000U    ///< not allowed in modeline
-#define P_CURSWANT     0x800000U    ///< update curswant required; not needed
-                                    ///< when there is a redraw flag
-#define P_NDNAME       0x1000000U   ///< only normal dir name chars allowed
-#define P_HLONLY       0x2000000U   ///< option only changes highlight, not text
-#define P_MLE          0x4000000U   ///< under control of 'modelineexpr'
-#define P_FUNC         0x8000000U   ///< accept a function reference or a lambda
-#define P_COLON        0x10000000U  ///< values use colons to create sublists
-
 #define HIGHLIGHT_INIT \
   "8:SpecialKey,~:EndOfBuffer,z:TermCursor,Z:TermCursorNC,@:NonText,d:Directory,e:ErrorMsg," \
   "i:IncSearch,l:Search,y:CurSearch,m:MoreMsg,M:ModeMsg,n:LineNr,a:LineNrAbove,b:LineNrBelow," \
@@ -348,6 +303,12 @@ enum {
 #define LISPWORD_VALUE \
   "defun,define,defmacro,set!,lambda,if,case,let,flet,let*,letrec,do,do*,define-syntax,let-syntax,letrec-syntax,destructuring-bind,defpackage,defparameter,defstruct,deftype,defvar,do-all-symbols,do-external-symbols,do-symbols,dolist,dotimes,ecase,etypecase,eval-when,labels,macrolet,multiple-value-bind,multiple-value-call,multiple-value-prog1,multiple-value-setq,prog1,progv,typecase,unless,unwind-protect,when,with-input-from-string,with-open-file,with-open-stream,with-output-to-string,with-package-iterator,define-condition,handler-bind,handler-case,restart-bind,restart-case,with-simple-restart,store-value,use-value,muffle-warning,abort,continue,with-slots,with-slots*,with-accessors,with-accessors*,defclass,defmethod,print-unreadable-object"
 
+// When a string option is NULL, it is set to empty_string_option,
+// to avoid having to check for NULL everywhere.
+//
+// TODO(famiu): Remove this when refcounted strings are used for string options.
+EXTERN char empty_string_option[] INIT( = "");
+
 // The following are actual variables for the options
 
 EXTERN char *p_ambw;             ///< 'ambiwidth'
@@ -403,7 +364,8 @@ EXTERN unsigned bo_flags;
 #define BO_REG    0x8000
 #define BO_SH     0x10000
 #define BO_SPELL  0x20000
-#define BO_WILD   0x40000
+#define BO_TERM   0x40000
+#define BO_WILD   0x80000
 
 EXTERN char *p_bsk;             ///< 'backupskip'
 EXTERN char *p_breakat;         ///< 'breakat'
@@ -429,6 +391,8 @@ EXTERN char *p_cms;             ///< 'commentstring'
 EXTERN char *p_cpt;             ///< 'complete'
 EXTERN OptInt p_columns;        ///< 'columns'
 EXTERN int p_confirm;           ///< 'confirm'
+EXTERN char *p_cia;             ///< 'completeitemalign'
+EXTERN unsigned cia_flags;      ///<  order flags of 'completeitemalign'
 EXTERN char *p_cot;             ///< 'completeopt'
 EXTERN unsigned cot_flags;      ///< flags from 'completeopt'
 // Keep in sync with p_cot_values in optionstr.c
@@ -487,6 +451,7 @@ EXTERN char *p_ffs;             ///< 'fileformats'
 EXTERN int p_fic;               ///< 'fileignorecase'
 EXTERN char *p_ft;              ///< 'filetype'
 EXTERN char *p_fcs;             ///< 'fillchar'
+EXTERN char *p_ffu;             ///< 'findfunc'
 EXTERN int p_fixeol;            ///< 'fixendofline'
 EXTERN char *p_fcl;             ///< 'foldclose'
 EXTERN OptInt p_fdls;           ///< 'foldlevelstart'
@@ -540,7 +505,7 @@ EXTERN char *p_jop;             ///< 'jumpooptions'
 EXTERN unsigned jop_flags;
 #define JOP_STACK               0x01
 #define JOP_VIEW                0x02
-#define JOP_UNLOAD              0x04
+#define JOP_CLEAN               0x04
 EXTERN char *p_keymap;          ///< 'keymap'
 EXTERN char *p_kp;              ///< 'keywordprg'
 EXTERN char *p_km;              ///< 'keymodel'
@@ -767,7 +732,7 @@ EXTERN unsigned ve_flags;
 #define VE_NONEU       32U      // "NONE"
 EXTERN OptInt p_verbose;        ///< 'verbose'
 #ifdef IN_OPTION_C
-char *p_vfile = "";             ///< used before options are initialized
+char *p_vfile = empty_string_option;  ///< used before options are initialized
 #else
 extern char *p_vfile;           ///< 'verbosefile'
 #endif

@@ -380,6 +380,11 @@ char *last_search_pattern(void)
   return spats[RE_SEARCH].pat;
 }
 
+size_t last_search_pattern_len(void)
+{
+  return spats[RE_SEARCH].patlen;
+}
+
 /// Return true when case should be ignored for search pattern "pat".
 /// Uses the 'ignorecase' and 'smartcase' options.
 int ignorecase(char *pat)
@@ -1260,7 +1265,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char *pat, size_t patlen
       // empty for the search_stat feature.
       if (!cmd_silent) {
         msgbuf[0] = (char)dirc;
-        if (utf_iscomposing(utf_ptr2char(p))) {
+        if (utf_iscomposing_first(utf_ptr2char(p))) {
           // Use a space to draw the composing char on.
           msgbuf[1] = ' ';
           memmove(msgbuf + 2, p, plen);

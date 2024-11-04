@@ -305,7 +305,7 @@ local function matchstr(text, pat_or_re)
     return
   end
 
-  return text:sub(vim.str_utfindex(text, s) + 1, vim.str_utfindex(text, e))
+  return text:sub(vim.str_utfindex(text, 'utf-32', s) + 1, vim.str_utfindex(text, 'utf-32', e))
 end
 
 -- attempt to extract the name and sect out of 'name(sect)'
@@ -675,7 +675,6 @@ function M.init_pager()
     vim.cmd.file({ 'man://' .. fn.fnameescape(ref):lower(), mods = { silent = true } })
   end
 
-  vim.g.pager = true
   set_options()
 end
 
@@ -723,7 +722,7 @@ function M.open_page(count, smods, args)
   end
 
   sect, name = extract_sect_and_name_path(path)
-  local buf = fn.bufnr()
+  local buf = api.nvim_get_current_buf()
   local save_tfu = vim.bo[buf].tagfunc
   vim.bo[buf].tagfunc = "v:lua.require'man'.goto_tag"
 
@@ -739,7 +738,9 @@ function M.open_page(count, smods, args)
     end
   end)
 
-  vim.bo[buf].tagfunc = save_tfu
+  if api.nvim_buf_is_valid(buf) then
+    vim.bo[buf].tagfunc = save_tfu
+  end
 
   if not ok then
     error(ret)

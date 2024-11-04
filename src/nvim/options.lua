@@ -1,3 +1,5 @@
+-- vim: tw=80
+
 --- @class vim.option_meta
 --- @field full_name string
 --- @field desc? string
@@ -6,8 +8,7 @@
 --- @field short_desc? string|fun(): string
 --- @field varname? string
 --- @field pv_name? string
---- @field type 'boolean'|'number'|'string'
---- @field hidden? boolean
+--- @field type vim.option_type|vim.option_type[]
 --- @field immutable? boolean
 --- @field list? 'comma'|'onecomma'|'commacolon'|'onecommacolon'|'flags'|'flagscomma'
 --- @field scope vim.option_scope[]
@@ -41,6 +42,8 @@
 --- @field meta? integer|boolean|string Default to use in Lua meta files
 
 --- @alias vim.option_scope 'global'|'buffer'|'window'
+--- @alias vim.option_type 'boolean'|'number'|'string'
+--- @alias vim.option_value boolean|number|string
 
 --- @alias vim.option_redraw
 --- |'statuslines'
@@ -59,18 +62,11 @@ local function cstr(s)
 end
 
 --- @param s string
---- @return fun(): string
-local function macros(s)
+--- @param t vim.option_type
+--- @return fun(): string, vim.option_type
+local function macros(s, t)
   return function()
-    return '.string=' .. s
-  end
-end
-
---- @param s string
---- @return fun(): string
-local function imacros(s)
-  return function()
-    return '.number=' .. s
+    return s, t
   end
 end
 
@@ -433,12 +429,13 @@ return {
         useful for example in source trees where all the files are symbolic or
         hard links and any changes should stay in the local source tree, not
         be propagated back to the original source.
-        						*crontab*
+        							*crontab*
         One situation where "no" and "auto" will cause problems: A program
         that opens a file, invokes Vim to edit that file, and then tests if
         the open file was changed (through the file descriptor) will check the
         backup file instead of the newly created file.  "crontab -e" is an
-        example.
+        example, as are several |file-watcher| daemons like inotify.  In that
+        case you probably want to switch this option.
 
         When a copy is made, the original file is truncated and then filled
         with the new text.  This means that protection bits, owner and
@@ -595,6 +592,7 @@ return {
         separated list of items. For each item that is present, the bell
         will be silenced. This is most useful to specify specific events in
         insert mode to be silenced.
+        You can also make it flash by using 'visualbell'.
 
         item	    meaning when present	~
         all	    All events.
@@ -618,6 +616,7 @@ return {
         register    Unknown register after <C-R> in |Insert-mode|.
         shell	    Bell from shell output |:!|.
         spell	    Error happened on spell suggest.
+        term	    Bell from |:terminal| output.
         wildmode    More matches in |cmdline-completion| available
         	    (depends on the 'wildmode' setting).
 
@@ -736,7 +735,6 @@ return {
     },
     {
       abbreviation = 'briopt',
-      alloced = true,
       cb = 'did_set_breakindentopt',
       defaults = { if_true = '' },
       deny_duplicates = true,
@@ -761,9 +759,9 @@ return {
         	list:{n}    Adds an additional indent for lines that match a
         		    numbered or bulleted list (using the
         		    'formatlistpat' setting).
-        	list:-1	    Uses the length of a match with 'formatlistpat'
-        		    for indentation.
         		    (default: 0)
+        	list:-1	    Uses the width of a match with 'formatlistpat' for
+        		    indentation.
         	column:{n}  Indent at column {n}. Will overrule the other
         		    sub-options. Note: an additional indent may be
         		    added for the 'showbreak' setting.
@@ -799,7 +797,6 @@ return {
     },
     {
       abbreviation = 'bh',
-      alloced = true,
       cb = 'did_set_bufhidden',
       defaults = { if_true = '' },
       desc = [=[
@@ -852,7 +849,6 @@ return {
     },
     {
       abbreviation = 'bt',
-      alloced = true,
       cb = 'did_set_buftype',
       defaults = { if_true = '' },
       desc = [=[
@@ -989,16 +985,17 @@ return {
     {
       cb = 'did_set_cedit',
       defaults = {
-        if_true = macros('CTRL_F_STR'),
+        if_true = macros('CTRL_F_STR', 'string'),
         doc = 'CTRL-F',
       },
       desc = [=[
         The key used in Command-line Mode to open the command-line window.
         Only non-printable keys are allowed.
         The key can be specified as a single character, but it is difficult to
-        type.  The preferred way is to use the <> notation.  Examples: >vim
-        	exe "set cedit=\\<C-Y>"
-        	exe "set cedit=\\<Esc>"
+        type.  The preferred way is to use |key-notation| (e.g. <Up>, <C-F>) or
+        a letter preceded with a caret (e.g. `^F` is CTRL-F).  Examples: >vim
+        	set cedit=^Y
+        	set cedit=<Esc>
         <	|Nvi| also has this option, but it only uses the first character.
         See |cmdwin|.
       ]=],
@@ -1103,7 +1100,6 @@ return {
     },
     {
       abbreviation = 'cink',
-      alloced = true,
       defaults = { if_true = '0{,0},0),0],:,0#,!^F,o,O,e' },
       deny_duplicates = true,
       desc = [=[
@@ -1122,7 +1118,6 @@ return {
     },
     {
       abbreviation = 'cino',
-      alloced = true,
       cb = 'did_set_cinoptions',
       defaults = { if_true = '' },
       deny_duplicates = true,
@@ -1140,7 +1135,6 @@ return {
     },
     {
       abbreviation = 'cinsd',
-      alloced = true,
       defaults = { if_true = 'public,protected,private' },
       deny_duplicates = true,
       desc = [=[
@@ -1159,7 +1153,6 @@ return {
     },
     {
       abbreviation = 'cinw',
-      alloced = true,
       defaults = { if_true = 'if,else,while,do,for,switch' },
       deny_duplicates = true,
       desc = [=[
@@ -1228,11 +1221,10 @@ return {
         used.  The command-line will cover the last line of the screen when
         shown.
 
-        WARNING: `cmdheight=0` is considered experimental. Expect some
-        unwanted behaviour. Some 'shortmess' flags and similar
-        mechanism might fail to take effect, causing unwanted hit-enter
-        prompts.  Some informative messages, both from Nvim itself and
-        plugins, will not be displayed.
+        WARNING: `cmdheight=0` is EXPERIMENTAL. Expect some unwanted behaviour.
+        Some 'shortmess' flags and similar mechanism might fail to take effect,
+        causing unwanted hit-enter prompts.  Some informative messages, both
+        from Nvim itself and plugins, will not be displayed.
       ]=],
       full_name = 'cmdheight',
       redraw = { 'all_windows' },
@@ -1283,7 +1275,7 @@ return {
       abbreviation = 'co',
       cb = 'did_set_lines_or_columns',
       defaults = {
-        if_true = imacros('DFLT_COLS'),
+        if_true = macros('DFLT_COLS', 'number'),
         doc = '80 or terminal width',
       },
       desc = [=[
@@ -1310,7 +1302,6 @@ return {
     },
     {
       abbreviation = 'com',
-      alloced = true,
       cb = 'did_set_comments',
       defaults = { if_true = 's1:/*,mb:*,ex:*/,://,b:#,:%,:XCOMM,n:>,fb:-,fb:•' },
       deny_duplicates = true,
@@ -1329,7 +1320,6 @@ return {
     },
     {
       abbreviation = 'cms',
-      alloced = true,
       cb = 'did_set_commentstring',
       defaults = { if_true = '' },
       desc = [=[
@@ -1355,7 +1345,6 @@ return {
     },
     {
       abbreviation = 'cpt',
-      alloced = true,
       cb = 'did_set_complete',
       defaults = { if_true = '.,w,b,u,t' },
       deny_duplicates = true,
@@ -1404,7 +1393,6 @@ return {
     },
     {
       abbreviation = 'cfu',
-      alloced = true,
       cb = 'did_set_completefunc',
       defaults = { if_true = '' },
       desc = [=[
@@ -1424,6 +1412,26 @@ return {
       short_desc = N_('function to be used for Insert mode completion'),
       type = 'string',
       varname = 'p_cfu',
+    },
+    {
+      abbreviation = 'cia',
+      cb = 'did_set_completeitemalign',
+      defaults = { if_true = 'abbr,kind,menu' },
+      deny_duplicates = true,
+      desc = [=[
+        A comma-separated list of |complete-items| that controls the alignment
+        and display order of items in the popup menu during Insert mode
+        completion. The supported values are abbr, kind, and menu. These
+        options allow to customize how the completion items are shown in the
+        popup menu.  Note: must always contain those three values in any
+        order.
+      ]=],
+      full_name = 'completeitemalign',
+      list = 'onecomma',
+      scope = { 'global' },
+      short_desc = N_('Insert mode completion item align order'),
+      type = 'string',
+      varname = 'p_cia',
     },
     {
       abbreviation = 'cot',
@@ -1506,7 +1514,6 @@ return {
     },
     {
       abbreviation = 'cocu',
-      alloced = true,
       cb = 'did_set_concealcursor',
       defaults = { if_true = '' },
       desc = [=[
@@ -1605,7 +1612,7 @@ return {
     {
       abbreviation = 'cpo',
       cb = 'did_set_cpoptions',
-      defaults = { if_true = macros('CPO_VIM') },
+      defaults = { if_true = macros('CPO_VIM', 'string') },
       desc = [=[
         A sequence of single character flags.  When a character is present
         this indicates Vi-compatible behavior.  This is used for things where
@@ -1949,7 +1956,6 @@ return {
     },
     {
       abbreviation = 'def',
-      alloced = true,
       defaults = { if_true = '' },
       desc = [=[
         Pattern to be used to find a macro definition.  It is a search
@@ -2069,7 +2075,6 @@ return {
     },
     {
       abbreviation = 'dip',
-      alloced = true,
       cb = 'did_set_diffopt',
       defaults = { if_true = 'internal,filler,closeoff' },
       deny_duplicates = true,
@@ -2326,9 +2331,12 @@ return {
       desc = [=[
         When on all Unicode emoji characters are considered to be full width.
         This excludes "text emoji" characters, which are normally displayed as
-        single width.  Unfortunately there is no good specification for this
-        and it has been determined on trial-and-error basis.  Use the
-        |setcellwidths()| function to change the behavior.
+        single width. However, such "text emoji" are treated as full-width
+        emoji if they are followed by the U+FE0F variant selector.
+
+        Unfortunately there is no good specification for this and it has been
+        determined on trial-and-error basis.  Use the |setcellwidths()|
+        function to change the behavior.
       ]=],
       full_name = 'emoji',
       redraw = { 'all_windows', 'ui_option' },
@@ -2340,7 +2348,7 @@ return {
     {
       abbreviation = 'enc',
       cb = 'did_set_encoding',
-      defaults = { if_true = macros('ENC_DFLT') },
+      defaults = { if_true = macros('ENC_DFLT', 'string') },
       deny_in_modelines = true,
       desc = [=[
         String-encoding used internally and for |RPC| communication.
@@ -2464,7 +2472,7 @@ return {
     },
     {
       abbreviation = 'ef',
-      defaults = { if_true = macros('DFLT_ERRORFILE') },
+      defaults = { if_true = macros('DFLT_ERRORFILE', 'string') },
       desc = [=[
         Name of the errorfile for the QuickFix mode (see |:cf|).
         When the "-q" command-line argument is used, 'errorfile' is set to the
@@ -2486,7 +2494,7 @@ return {
     {
       abbreviation = 'efm',
       defaults = {
-        if_true = macros('DFLT_EFM'),
+        if_true = macros('DFLT_EFM', 'string'),
         doc = 'is very long',
       },
       deny_duplicates = true,
@@ -2561,7 +2569,6 @@ return {
     },
     {
       abbreviation = 'fenc',
-      alloced = true,
       cb = 'did_set_encoding',
       defaults = { if_true = '' },
       desc = [=[
@@ -2675,10 +2682,9 @@ return {
     },
     {
       abbreviation = 'ff',
-      alloced = true,
       cb = 'did_set_fileformat',
       defaults = {
-        if_true = macros('DFLT_FF'),
+        if_true = macros('DFLT_FF', 'string'),
         doc = 'Windows: "dos", Unix: "unix"',
       },
       desc = [=[
@@ -2711,7 +2717,7 @@ return {
       abbreviation = 'ffs',
       cb = 'did_set_fileformats',
       defaults = {
-        if_true = macros('DFLT_FFS_VIM'),
+        if_true = macros('DFLT_FFS_VIM', 'string'),
         doc = 'Windows: "dos,unix", Unix: "unix,dos"',
       },
       deny_duplicates = true,
@@ -2791,7 +2797,6 @@ return {
     },
     {
       abbreviation = 'ft',
-      alloced = true,
       cb = 'did_set_filetype_or_syntax',
       defaults = { if_true = '' },
       desc = [=[
@@ -2808,14 +2813,14 @@ return {
         	/* vim: set filetype=idl : */
         <	|FileType| |filetypes|
         When a dot appears in the value then this separates two filetype
-        names.  Example: >c
+        names, it should therefore not be used for a filetype.  Example: >c
         	/* vim: set filetype=c.doxygen : */
         <	This will use the "c" filetype first, then the "doxygen" filetype.
         This works both for filetype plugins and for syntax files.  More than
         one dot may appear.
         This option is not copied to another buffer, independent of the 's' or
         'S' flag in 'cpoptions'.
-        Only normal file name characters can be used, `/\*?[|<>` are illegal.
+        Only alphanumeric characters, '-' and '_' can be used.
       ]=],
       full_name = 'filetype',
       noglob = true,
@@ -2827,7 +2832,6 @@ return {
     },
     {
       abbreviation = 'fcs',
-      alloced = true,
       cb = 'did_set_chars_option',
       defaults = { if_true = '' },
       deny_duplicates = true,
@@ -2902,6 +2906,66 @@ return {
       varname = 'p_fcs',
     },
     {
+      abbreviation = 'ffu',
+      cb = 'did_set_findfunc',
+      defaults = { if_true = '' },
+      desc = [=[
+        Function that is called to obtain the filename(s) for the |:find|
+        command.  When this option is empty, the internal |file-searching|
+        mechanism is used.
+
+        The value can be the name of a function, a |lambda| or a |Funcref|.
+        See |option-value-function| for more information.
+
+        The function is called with two arguments.  The first argument is a
+        |String| and is the |:find| command argument.  The second argument is
+        a |Boolean| and is set to |v:true| when the function is called to get
+        a List of command-line completion matches for the |:find| command.
+        The function should return a List of strings.
+
+        The function is called only once per |:find| command invocation.
+        The function can process all the directories specified in 'path'.
+
+        If a match is found, the function should return a |List| containing
+        one or more file names.  If a match is not found, the function
+        should return an empty List.
+
+        If any errors are encountered during the function invocation, an
+        empty List is used as the return value.
+
+        It is not allowed to change text or jump to another window while
+        executing the 'findfunc' |textlock|.
+
+        This option cannot be set from a |modeline| or in the |sandbox|, for
+        security reasons.
+
+        Examples:
+        >vim
+            " Use glob()
+            func FindFuncGlob(cmdarg, cmdcomplete)
+        	let pat = a:cmdcomplete ? $'{a:cmdarg}*' : a:cmdarg
+        	return glob(pat, v:false, v:true)
+            endfunc
+            set findfunc=FindFuncGlob
+
+            " Use the 'git ls-files' output
+            func FindGitFiles(cmdarg, cmdcomplete)
+        	let fnames = systemlist('git ls-files')
+        	return fnames->filter('v:val =~? a:cmdarg')
+            endfunc
+            set findfunc=FindGitFiles
+        <
+      ]=],
+      full_name = 'findfunc',
+      func = true,
+      scope = { 'global', 'buffer' },
+      secure = true,
+      short_desc = N_('function called for :find'),
+      tags = { 'E1514' },
+      type = 'string',
+      varname = 'p_ffu',
+    },
+    {
       abbreviation = 'fixeol',
       cb = 'did_set_eof_eol_fixeol_bomb',
       defaults = { if_true = true },
@@ -2942,7 +3006,6 @@ return {
     },
     {
       abbreviation = 'fdc',
-      alloced = true,
       cb = 'did_set_foldcolumn',
       defaults = { if_true = '0' },
       desc = [=[
@@ -2981,7 +3044,6 @@ return {
     },
     {
       abbreviation = 'fde',
-      alloced = true,
       cb = 'did_set_foldexpr',
       defaults = { if_true = '0' },
       desc = [=[
@@ -3007,7 +3069,6 @@ return {
     },
     {
       abbreviation = 'fdi',
-      alloced = true,
       cb = 'did_set_foldignore',
       defaults = { if_true = '#' },
       desc = [=[
@@ -3062,7 +3123,6 @@ return {
     },
     {
       abbreviation = 'fmr',
-      alloced = true,
       cb = 'did_set_foldmarker',
       defaults = { if_true = '{{{,}}}' },
       deny_duplicates = true,
@@ -3082,7 +3142,6 @@ return {
     },
     {
       abbreviation = 'fdm',
-      alloced = true,
       cb = 'did_set_foldmethod',
       defaults = { if_true = 'manual' },
       desc = [=[
@@ -3183,7 +3242,6 @@ return {
     },
     {
       abbreviation = 'fdt',
-      alloced = true,
       cb = 'did_set_optexpr',
       defaults = { if_true = 'foldtext()' },
       desc = [=[
@@ -3211,7 +3269,6 @@ return {
     },
     {
       abbreviation = 'fex',
-      alloced = true,
       cb = 'did_set_optexpr',
       defaults = { if_true = '' },
       desc = [=[
@@ -3265,7 +3322,6 @@ return {
     },
     {
       abbreviation = 'flp',
-      alloced = true,
       defaults = { if_true = '^\\s*\\d\\+[\\]:.)}\\t ]\\s*' },
       desc = [=[
         A pattern that is used to recognize a list header.  This is used for
@@ -3286,9 +3342,8 @@ return {
     },
     {
       abbreviation = 'fo',
-      alloced = true,
       cb = 'did_set_formatoptions',
-      defaults = { if_true = macros('DFLT_FO_VIM') },
+      defaults = { if_true = macros('DFLT_FO_VIM', 'string') },
       desc = [=[
         This is a sequence of letters which describes how automatic
         formatting is to be done.
@@ -3381,7 +3436,7 @@ return {
     },
     {
       abbreviation = 'gfm',
-      defaults = { if_true = macros('DFLT_GREPFORMAT') },
+      defaults = { if_true = macros('DFLT_GREPFORMAT', 'string') },
       deny_duplicates = true,
       desc = [=[
         Format to recognize for the ":grep" command output.
@@ -3745,6 +3800,7 @@ return {
     },
     {
       abbreviation = 'gtl',
+      defaults = { if_true = '' },
       desc = [=[
         When non-empty describes the text to use in a label of the GUI tab
         pages line.  When empty and when the result is empty Vim will use a
@@ -3770,6 +3826,7 @@ return {
     },
     {
       abbreviation = 'gtt',
+      defaults = { if_true = '' },
       desc = [=[
         When non-empty describes the text to use in a tooltip for the GUI tab
         pages line.  When empty Vim will use a default tooltip.
@@ -3789,7 +3846,7 @@ return {
       abbreviation = 'hf',
       cb = 'did_set_helpfile',
       defaults = {
-        if_true = macros('DFLT_HELPFILE'),
+        if_true = macros('DFLT_HELPFILE', 'string'),
         doc = [[(MS-Windows) "$VIMRUNTIME\doc\help.txt"
                   (others) "$VIMRUNTIME/doc/help.txt"]],
       },
@@ -3886,7 +3943,7 @@ return {
     {
       abbreviation = 'hl',
       cb = 'did_set_highlight',
-      defaults = { if_true = macros('HIGHLIGHT_INIT') },
+      defaults = { if_true = macros('HIGHLIGHT_INIT', 'string') },
       deny_duplicates = true,
       full_name = 'highlight',
       list = 'onecomma',
@@ -4052,7 +4109,7 @@ return {
     {
       abbreviation = 'imi',
       cb = 'did_set_iminsert',
-      defaults = { if_true = imacros('B_IMODE_NONE') },
+      defaults = { if_true = macros('B_IMODE_NONE', 'number') },
       desc = [=[
         Specifies whether :lmap or an Input Method (IM) is to be used in
         Insert mode.  Valid values:
@@ -4078,7 +4135,7 @@ return {
     },
     {
       abbreviation = 'ims',
-      defaults = { if_true = imacros('B_IMODE_USE_INSERT') },
+      defaults = { if_true = macros('B_IMODE_USE_INSERT', 'number') },
       desc = [=[
         Specifies whether :lmap or an Input Method (IM) is to be used when
         entering a search pattern.  Valid values:
@@ -4127,7 +4184,6 @@ return {
     },
     {
       abbreviation = 'inc',
-      alloced = true,
       defaults = { if_true = '' },
       desc = [=[
         Pattern to be used to find an include command.  It is a search
@@ -4149,7 +4205,6 @@ return {
     },
     {
       abbreviation = 'inex',
-      alloced = true,
       cb = 'did_set_optexpr',
       defaults = { if_true = '' },
       desc = [=[
@@ -4234,7 +4289,6 @@ return {
     },
     {
       abbreviation = 'inde',
-      alloced = true,
       cb = 'did_set_optexpr',
       defaults = { if_true = '' },
       desc = [=[
@@ -4288,7 +4342,6 @@ return {
     },
     {
       abbreviation = 'indk',
-      alloced = true,
       defaults = { if_true = '0{,0},0),0],:,0#,!^F,o,O,e' },
       deny_duplicates = true,
       desc = [=[
@@ -4430,8 +4483,7 @@ return {
     },
     {
       abbreviation = 'isk',
-      alloced = true,
-      cb = 'did_set_isopt',
+      cb = 'did_set_iskeyword',
       defaults = { if_true = '@,48-57,_,192-255' },
       deny_duplicates = true,
       desc = [=[
@@ -4512,7 +4564,7 @@ return {
     {
       abbreviation = 'jop',
       cb = 'did_set_jumpoptions',
-      defaults = { if_true = 'unload' },
+      defaults = { if_true = 'clean' },
       deny_duplicates = true,
       desc = [=[
         List of words that change the behavior of the |jumplist|.
@@ -4526,7 +4578,7 @@ return {
         		|alternate-file| or using |mark-motions| try to
         		restore the |mark-view| in which the action occurred.
 
-          unload        Remove unloaded buffers from the jumplist.
+          clean         Remove unloaded buffers from the jumplist.
         		EXPERIMENTAL: this flag may change in the future.
       ]=],
       expand_cb = 'expand_set_jumpoptions',
@@ -4539,7 +4591,6 @@ return {
     },
     {
       abbreviation = 'kmp',
-      alloced = true,
       cb = 'did_set_keymap',
       defaults = { if_true = '' },
       desc = [=[
@@ -4547,7 +4598,7 @@ return {
         Setting this option to a valid keymap name has the side effect of
         setting 'iminsert' to one, so that the keymap becomes effective.
         'imsearch' is also set to one, unless it was -1
-        Only normal file name characters can be used, `/\*?[|<>` are illegal.
+        Only alphanumeric characters, '.', '-' and '_' can be used.
       ]=],
       full_name = 'keymap',
       normal_fname_chars = true,
@@ -4784,7 +4835,7 @@ return {
     {
       cb = 'did_set_lines_or_columns',
       defaults = {
-        if_true = imacros('DFLT_ROWS'),
+        if_true = macros('DFLT_ROWS', 'number'),
         doc = '24 or terminal height',
       },
       desc = [=[
@@ -4872,7 +4923,7 @@ return {
     {
       abbreviation = 'lw',
       defaults = {
-        if_true = macros('LISPWORD_VALUE'),
+        if_true = macros('LISPWORD_VALUE', 'string'),
         doc = 'is very long',
       },
       deny_duplicates = true,
@@ -4916,7 +4967,6 @@ return {
     },
     {
       abbreviation = 'lcs',
-      alloced = true,
       cb = 'did_set_chars_option',
       defaults = { if_true = 'tab:> ,trail:-,nbsp:+' },
       deny_duplicates = true,
@@ -5138,7 +5188,6 @@ return {
     },
     {
       abbreviation = 'mps',
-      alloced = true,
       cb = 'did_set_matchpairs',
       defaults = { if_true = '(:),{:},[:]' },
       deny_duplicates = true,
@@ -5182,7 +5231,7 @@ return {
     },
     {
       abbreviation = 'mco',
-      defaults = { if_true = imacros('MAX_MCO') },
+      defaults = { if_true = macros('MAX_MCO', 'number') },
       full_name = 'maxcombine',
       scope = { 'global' },
       short_desc = N_('maximum nr of combining characters displayed'),
@@ -5706,7 +5755,6 @@ return {
     },
     {
       abbreviation = 'nf',
-      alloced = true,
       cb = 'did_set_nrformats',
       defaults = { if_true = 'bin,hex' },
       deny_duplicates = true,
@@ -5817,7 +5865,6 @@ return {
     },
     {
       abbreviation = 'ofu',
-      alloced = true,
       cb = 'did_set_omnifunc',
       defaults = { if_true = '' },
       desc = [=[
@@ -6201,7 +6248,6 @@ return {
     },
     {
       abbreviation = 'qe',
-      alloced = true,
       defaults = { if_true = '\\' },
       desc = [=[
         The characters that are used to escape quotes in a string.  Used for
@@ -6412,7 +6458,6 @@ return {
     },
     {
       abbreviation = 'rlc',
-      alloced = true,
       cb = 'did_set_rightleftcmd',
       defaults = { if_true = 'search' },
       desc = [=[
@@ -6467,7 +6512,6 @@ return {
     },
     {
       abbreviation = 'ruf',
-      alloced = true,
       cb = 'did_set_rulerformat',
       defaults = { if_true = '' },
       desc = [=[
@@ -7068,7 +7112,7 @@ return {
         						*shell-powershell*
         To use PowerShell: >vim
         	let &shell = executable('pwsh') ? 'pwsh' : 'powershell'
-        	let &shellcmdflag = '-NoLogo -ExecutionPolicy RemoteSigned -Command [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();$PSDefaultParameterValues[''Out-File:Encoding'']=''utf8'';Remove-Alias -Force -ErrorAction SilentlyContinue tee;'
+        	let &shellcmdflag = '-NoLogo -NonInteractive -ExecutionPolicy RemoteSigned -Command [Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new();$PSDefaultParameterValues[''Out-File:Encoding'']=''utf8'';$PSStyle.OutputRendering=''plaintext'';Remove-Alias -Force -ErrorAction SilentlyContinue tee;'
         	let &shellredir = '2>&1 | %%{ "$_" } | Out-File %s; exit $LastExitCode'
         	let &shellpipe  = '2>&1 | %%{ "$_" } | tee %s; exit $LastExitCode'
         	set shellquote= shellxquote=
@@ -7616,7 +7660,6 @@ return {
     },
     {
       abbreviation = 'scl',
-      alloced = true,
       cb = 'did_set_signcolumn',
       defaults = { if_true = 'auto' },
       desc = [=[
@@ -7773,7 +7816,6 @@ return {
     },
     {
       abbreviation = 'spc',
-      alloced = true,
       cb = 'did_set_spellcapcheck',
       defaults = { if_true = '[.?!]\\_[\\])\'"\\t ]\\+' },
       desc = [=[
@@ -7796,7 +7838,6 @@ return {
     },
     {
       abbreviation = 'spf',
-      alloced = true,
       cb = 'did_set_spellfile',
       defaults = { if_true = '' },
       deny_duplicates = true,
@@ -7834,7 +7875,6 @@ return {
     },
     {
       abbreviation = 'spl',
-      alloced = true,
       cb = 'did_set_spelllang',
       defaults = { if_true = 'en' },
       deny_duplicates = true,
@@ -8051,7 +8091,8 @@ return {
         non-blank of the line.  When off the cursor is kept in the same column
         (if possible).  This applies to the commands:
         - CTRL-D, CTRL-U, CTRL-B, CTRL-F, "G", "H", "M", "L", "gg"
-        - "d", "<<" and ">>" with a linewise operator
+        - "d", "<<", "==" and ">>" with a linewise operator
+          (|operator-resulting-pos|)
         - "%" with a count
         - buffer changing commands (CTRL-^, :bnext, :bNext, etc.)
         - Ex commands that only have a line number, e.g., ":25" or ":+".
@@ -8067,11 +8108,9 @@ return {
     },
     {
       abbreviation = 'stc',
-      alloced = true,
       cb = 'did_set_statuscolumn',
       defaults = { if_true = '' },
       desc = [=[
-        EXPERIMENTAL
         When non-empty, this option determines the content of the area to the
         side of a window, normally containing the fold, sign and number columns.
         The format of this option is like that of 'statusline'.
@@ -8134,7 +8173,6 @@ return {
     },
     {
       abbreviation = 'stl',
-      alloced = true,
       cb = 'did_set_statusline',
       defaults = { if_true = '' },
       desc = [=[
@@ -8331,7 +8369,7 @@ return {
 
         Examples:
         Emulate standard status line with 'ruler' set >vim
-          set statusline=%<%f\ %h%m%r%=%-14.(%l,%c%V%)\ %P
+          set statusline=%<%f\ %h%w%m%r%=%-14.(%l,%c%V%)\ %P
         <	Similar, but add ASCII value of char under the cursor (like "ga") >vim
           set statusline=%<%f%h%m%r%=%b\ 0x%B\ \ %l,%c%V\ %P
         <	Display byte count and byte value, modified flag in red. >vim
@@ -8383,7 +8421,6 @@ return {
     },
     {
       abbreviation = 'sua',
-      alloced = true,
       defaults = { if_true = '' },
       deny_duplicates = true,
       desc = [=[
@@ -8492,7 +8529,6 @@ return {
     },
     {
       abbreviation = 'syn',
-      alloced = true,
       cb = 'did_set_filetype_or_syntax',
       defaults = { if_true = '' },
       desc = [=[
@@ -8518,7 +8554,7 @@ return {
         Syntax autocommand event is triggered with the value as argument.
         This option is not copied to another buffer, independent of the 's' or
         'S' flag in 'cpoptions'.
-        Only normal file name characters can be used, `/\*?[|<>` are illegal.
+        Only alphanumeric characters, '.', '-' and '_' can be used.
       ]=],
       full_name = 'syntax',
       noglob = true,
@@ -8979,7 +9015,6 @@ return {
     },
     {
       abbreviation = 'tsrfu',
-      alloced = true,
       cb = 'did_set_thesaurusfunc',
       defaults = { if_true = '' },
       desc = [=[
@@ -9044,7 +9079,7 @@ return {
       desc = [=[
         When on, the title of the window will be set to the value of
         'titlestring' (if it is not empty), or to:
-        	filename [+=-] (path) - NVIM
+        	filename [+=-] (path) - Nvim
         Where:
         	filename	the name of the file being edited
         	-		indicates the file cannot be modified, 'ma' off
@@ -9052,11 +9087,11 @@ return {
         	=		indicates the file is read-only
         	=+		indicates the file is read-only and modified
         	(path)		is the path of the file being edited
-        	- NVIM		the server name |v:servername| or "NVIM"
+        	- Nvim		the server name |v:servername| or "Nvim"
       ]=],
       full_name = 'title',
       scope = { 'global' },
-      short_desc = N_('Vim set the title of the window'),
+      short_desc = N_('set the title of the window'),
       type = 'boolean',
       varname = 'p_title',
     },
@@ -9104,7 +9139,9 @@ return {
         window.  This happens only when the 'title' option is on.
 
         When this option contains printf-style '%' items, they will be
-        expanded according to the rules used for 'statusline'.
+        expanded according to the rules used for 'statusline'.  If it contains
+        an invalid '%' format, the value is used as-is and no error or warning
+        will be given when the value is set.
         This option cannot be set in a modeline when 'modelineexpr' is off.
 
         Example: >vim
@@ -9583,7 +9620,7 @@ return {
       abbreviation = 'wc',
       cb = 'did_set_wildchar',
       defaults = {
-        if_true = imacros('TAB'),
+        if_true = macros('TAB', 'number'),
         doc = '<Tab>',
       },
       desc = [=[
@@ -9595,7 +9632,12 @@ return {
         Some keys will not work, such as CTRL-C, <CR> and Enter.
         <Esc> can be used, but hitting it twice in a row will still exit
         command-line as a failsafe measure.
-        Although 'wc' is a number option, you can set it to a special key: >vim
+        Although 'wc' is a number option, it can be specified as a number, a
+        single character, a |key-notation| (e.g. <Up>, <C-F>) or a letter
+        preceded with a caret (e.g. `^F` is CTRL-F): >vim
+        	:set wc=27
+        	:set wc=X
+        	:set wc=^I
         	set wc=<Tab>
         <
       ]=],
@@ -9832,7 +9874,6 @@ return {
     },
     {
       abbreviation = 'wbr',
-      alloced = true,
       cb = 'did_set_winbar',
       defaults = { if_true = '' },
       desc = [=[
@@ -9975,7 +10016,6 @@ return {
     },
     {
       abbreviation = 'winhl',
-      alloced = true,
       cb = 'did_set_winhighlight',
       defaults = { if_true = '' },
       deny_duplicates = true,

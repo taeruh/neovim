@@ -748,6 +748,10 @@ static int terminal_execute(VimState *state, int key)
     }
     break;
 
+  case K_PASTE_START:
+    paste_repeat(1);
+    break;
+
   case K_EVENT:
     // We cannot let an event free the terminal yet. It is still needed.
     s->term->refcount++;
@@ -891,13 +895,13 @@ static bool is_filter_char(int c)
   return !!(tpf_flags & flag);
 }
 
-void terminal_paste(int count, char **y_array, size_t y_size)
+void terminal_paste(int count, String *y_array, size_t y_size)
 {
   if (y_size == 0) {
     return;
   }
   vterm_keyboard_start_paste(curbuf->terminal->vt);
-  size_t buff_len = strlen(y_array[0]);
+  size_t buff_len = y_array[0].size;
   char *buff = xmalloc(buff_len);
   for (int i = 0; i < count; i++) {
     // feed the lines to the terminal
@@ -910,13 +914,13 @@ void terminal_paste(int count, char **y_array, size_t y_size)
         terminal_send(curbuf->terminal, "\n", 1);
 #endif
       }
-      size_t len = strlen(y_array[j]);
+      size_t len = y_array[j].size;
       if (len > buff_len) {
         buff = xrealloc(buff, len);
         buff_len = len;
       }
       char *dst = buff;
-      char *src = y_array[j];
+      char *src = y_array[j].data;
       while (*src != NUL) {
         len = (size_t)utf_ptr2len(src);
         int c = utf_ptr2char(src);
@@ -1174,9 +1178,10 @@ static int term_settermprop(VTermProp prop, VTermValue *val, void *data)
   return 1;
 }
 
+/// Called when the terminal wants to ring the system bell.
 static int term_bell(void *data)
 {
-  ui_call_bell();
+  vim_beep(BO_TERM);
   return 1;
 }
 

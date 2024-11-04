@@ -119,6 +119,7 @@ typedef struct {
   Array bufpos;
   Boolean external;
   Boolean focusable;
+  Boolean mouse;
   Boolean vertical;
   Integer zindex;
   Object border;
@@ -275,8 +276,8 @@ typedef struct {
   String reg;
   Boolean bang;
   Array args;
-  Dictionary magic;
-  Dictionary mods;
+  Dict magic;
+  Dict mods;
   Object nargs;
   Object addr;
   Object nextcmd;
@@ -293,7 +294,7 @@ typedef struct {
   Boolean silent;
   Boolean emsg_silent;
   Boolean unsilent;
-  Dictionary filter;
+  Dict filter;
   Boolean sandbox;
   Boolean noautocmd;
   Boolean browse;
