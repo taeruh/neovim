@@ -1083,6 +1083,12 @@ vim.ui_attach({ns}, {options}, {callback})                   *vim.ui_attach()*
     |ui-popupmenu| and the sections below for event format for respective
     events.
 
+    Callbacks for `msg_show` events are executed in |api-fast| context unless
+    Nvim will wait for input, in which case messages should be shown
+    immediately.
+
+    Excessive errors inside the callback will result in forced detachment.
+
     WARNING: This api is considered experimental. Usability will vary for
     different screen elements. In particular `ext_messages` behavior is
     subject to further changes and usability improvements. This is expected to
@@ -1905,6 +1911,11 @@ vim.show_pos({bufnr}, {row}, {col}, {filter})                 *vim.show_pos()*
 
     Can also be shown with `:Inspect`.                              *:Inspect*
 
+    Example: To bind this function to the vim-scriptease inspired `zS` in
+    Normal mode: >lua
+        vim.keymap.set('n', 'zS', vim.show_pos)
+<
+
     Attributes: ~
         Since: 0.9.0
 
@@ -1931,12 +1942,10 @@ vim.show_pos({bufnr}, {row}, {col}, {filter})                 *vim.show_pos()*
 *vim.Ringbuf*
 
     Fields: ~
-      • {clear}  (`fun()`) Clear all items
-      • {push}   (`fun(item: T)`) Adds an item, overriding the oldest item if
-                 the buffer is full.
-      • {pop}    (`fun(): T?`) Removes and returns the first unread item
-      • {peek}   (`fun(): T?`) Returns the first unread item without removing
-                 it
+      • {clear}  (`fun()`) See |Ringbuf:clear()|.
+      • {push}   (`fun(item: T)`) See |Ringbuf:push()|.
+      • {pop}    (`fun(): T?`) See |Ringbuf:pop()|.
+      • {peek}   (`fun(): T?`) See |Ringbuf:peek()|.
 
 
 Ringbuf:clear()                                              *Ringbuf:clear()*
@@ -2481,21 +2490,23 @@ vim.validate({name}, {value}, {validator}, {optional}, {message})
 ==============================================================================
 Lua module: vim.loader                                            *vim.loader*
 
-vim.loader.disable()                                    *vim.loader.disable()*
+vim.loader.enable({enable})                              *vim.loader.enable()*
     WARNING: This feature is experimental/unstable.
 
-    Disables the experimental Lua module loader:
-    • removes the loaders
-    • adds the default Nvim loader
+    Enables or disables the experimental Lua module loader:
 
-vim.loader.enable()                                      *vim.loader.enable()*
-    WARNING: This feature is experimental/unstable.
-
-    Enables the experimental Lua module loader:
-    • overrides loadfile
+    Enable (`enable=true`):
+    • overrides |loadfile()|
     • adds the Lua loader using the byte-compilation cache
     • adds the libs loader
     • removes the default Nvim loader
+
+    Disable (`enable=false`):
+    • removes the loaders
+    • adds the default Nvim loader
+
+    Parameters: ~
+      • {enable}  (`boolean?`) true/nil to enable, false to disable
 
 vim.loader.find({modname}, {opts})                         *vim.loader.find()*
     WARNING: This feature is experimental/unstable.
@@ -2919,6 +2930,17 @@ vim.keymap.set({mode}, {lhs}, {rhs}, {opts})                *vim.keymap.set()*
 
 ==============================================================================
 Lua module: vim.fs                                                    *vim.fs*
+
+
+                                                             *vim.fs.exists()*
+Use |uv.fs_stat()| to check a file's type, and whether it exists.
+
+Example: >lua
+  if vim.uv.fs_stat(file) then
+    vim.print("file exists")
+  end
+<
+
 
 vim.fs.basename({file})                                    *vim.fs.basename()*
     Return the basename of the given path

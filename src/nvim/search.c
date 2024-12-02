@@ -113,7 +113,7 @@ static int last_idx = 0;        // index in spats[] for RE_LAST
 static uint8_t lastc[2] = { NUL, NUL };   // last character searched for
 static Direction lastcdir = FORWARD;      // last direction of character search
 static bool last_t_cmd = true;            // last search t_cmd
-static char lastc_bytes[MB_MAXBYTES + 1];
+static char lastc_bytes[MAX_SCHAR_SIZE + 1];
 static int lastc_bytelen = 1;             // >1 for multi-byte char
 
 // copy of spats[], for keeping the search patterns while executing autocmds
@@ -1203,6 +1203,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char *pat, size_t patlen
 
       // Compute msg_row early.
       msg_start();
+      msg_ext_set_kind("search_cmd");
 
       // Get the offset, so we know how long it is.
       if (!cmd_silent
@@ -1304,7 +1305,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char *pat, size_t patlen
             memset(msgbuf + pat_len, ' ', (size_t)(r - msgbuf));
           }
         }
-        msg_outtrans(msgbuf, 0);
+        msg_outtrans(msgbuf, 0, false);
         msg_clr_eos();
         msg_check();
 
@@ -1422,7 +1423,7 @@ int do_search(oparg_T *oap, int dirc, int search_delim, char *pat, size_t patlen
       cmdline_search_stat(dirc, &pos, &curwin->w_cursor,
                           show_top_bot_msg, msgbuf, msgbuflen,
                           (count != 1 || has_offset
-                           || (!(fdo_flags & FDO_SEARCH)
+                           || (!(fdo_flags & kOptFdoFlagSearch)
                                && hasFolding(curwin, curwin->w_cursor.lnum, NULL,
                                              NULL))),
                           SEARCH_STAT_DEF_MAX_COUNT,
@@ -1550,14 +1551,11 @@ int searchc(cmdarg_T *cap, bool t_cmd)
       *lastc = (uint8_t)c;
       set_csearch_direction(dir);
       set_csearch_until(t_cmd);
-      lastc_bytelen = utf_char2bytes(c, lastc_bytes);
-      if (cap->ncharC1 != 0) {
-        lastc_bytelen += utf_char2bytes(cap->ncharC1,
-                                        lastc_bytes + lastc_bytelen);
-        if (cap->ncharC2 != 0) {
-          lastc_bytelen += utf_char2bytes(cap->ncharC2,
-                                          lastc_bytes + lastc_bytelen);
-        }
+      if (cap->nchar_len) {
+        lastc_bytelen = cap->nchar_len;
+        memcpy(lastc_bytes, cap->nchar_composing, (size_t)cap->nchar_len);
+      } else {
+        lastc_bytelen = utf_char2bytes(c, lastc_bytes);
       }
     }
   } else {            // repeat previous search
@@ -2352,7 +2350,7 @@ void showmatch(int c)
   }
 
   if ((lpos = findmatch(NULL, NUL)) == NULL) {  // no match, so beep
-    vim_beep(BO_MATCH);
+    vim_beep(kOptBoFlagShowmatch);
     return;
   }
 
@@ -2537,7 +2535,7 @@ int current_search(int count, bool forward)
     }
   }
 
-  if (fdo_flags & FDO_SEARCH && KeyTyped) {
+  if (fdo_flags & kOptFdoFlagSearch && KeyTyped) {
     foldOpenCursor();
   }
 
@@ -3734,7 +3732,7 @@ void find_pattern_in_path(char *ptr, Direction dir, size_t len, bool whole, bool
                 && action == ACTION_SHOW_ALL && files[i].matched) {
               msg_putchar('\n');  // cursor below last one
               if (!got_int) {  // don't display if 'q' typed at "--more--" message
-                msg_home_replace_hl(new_fname);
+                msg_home_replace(new_fname);
                 msg_puts(_(" (includes previously listed match)"));
                 prev_fname = NULL;
               }
@@ -3775,7 +3773,7 @@ void find_pattern_in_path(char *ptr, Direction dir, size_t len, bool whole, bool
           if (new_fname != NULL) {
             // using "new_fname" is more reliable, e.g., when
             // 'includeexpr' is set.
-            msg_outtrans(new_fname, HL_ATTR(HLF_D));
+            msg_outtrans(new_fname, HLF_D, false);
           } else {
             // Isolate the file name.
             // Include the surrounding "" or <> if present.
@@ -3809,7 +3807,7 @@ void find_pattern_in_path(char *ptr, Direction dir, size_t len, bool whole, bool
             }
             char save_char = p[i];
             p[i] = NUL;
-            msg_outtrans(p, HL_ATTR(HLF_D));
+            msg_outtrans(p, HLF_D, false);
             p[i] = save_char;
           }
 
@@ -3861,7 +3859,7 @@ void find_pattern_in_path(char *ptr, Direction dir, size_t len, bool whole, bool
             vim_snprintf(IObuff, IOSIZE,
                          _("Scanning included file: %s"),
                          new_fname);
-            msg_trunc(IObuff, true, HL_ATTR(HLF_R));
+            msg_trunc(IObuff, true, HLF_R);
           } else if (p_verbose >= 5) {
             verbose_enter();
             smsg(0, _("Searching included file %s"), new_fname);
@@ -4035,7 +4033,7 @@ search_line:
           }
           if (!got_int) {             // don't display if 'q' typed
                                       // at "--more--" message
-            msg_home_replace_hl(curr_fname);
+            msg_home_replace(curr_fname);
           }
           prev_fname = curr_fname;
         }
@@ -4236,7 +4234,7 @@ static void show_pat_in_path(char *line, int type, bool did_show, int action, FI
       msg_puts(IObuff);
       snprintf(IObuff, IOSIZE, "%4" PRIdLINENR, *lnum);  // Show line nr.
       // Highlight line numbers.
-      msg_puts_attr(IObuff, HL_ATTR(HLF_N));
+      msg_puts_hl(IObuff, HLF_N, false);
       msg_puts(" ");
     }
     msg_prt_line(line, false);

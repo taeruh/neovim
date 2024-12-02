@@ -1137,7 +1137,7 @@ M.funcs = {
 
     ]=],
     name = 'charcol',
-    params = { { 'expr', 'string|integer[]' }, { 'winid', 'integer' } },
+    params = { { 'expr', 'string|any[]' }, { 'winid', 'integer' } },
     returns = 'integer',
     signature = 'charcol({expr} [, {winid}])',
   },
@@ -1296,7 +1296,7 @@ M.funcs = {
 
     ]=],
     name = 'col',
-    params = { { 'expr', 'string|integer[]' }, { 'winid', 'integer' } },
+    params = { { 'expr', 'string|any[]' }, { 'winid', 'integer' } },
     returns = 'integer',
     signature = 'col({expr} [, {winid}])',
   },
@@ -2165,6 +2165,7 @@ M.funcs = {
       If {expr} starts with "./" the |current-directory| is used.
 
     ]=],
+    fast = true,
     name = 'exepath',
     params = { { 'expr', 'string' } },
     signature = 'exepath({expr})',
@@ -4799,6 +4800,8 @@ M.funcs = {
       	botline		last complete displayed buffer line
       	bufnr		number of buffer in the window
       	height		window height (excluding winbar)
+      	leftcol		first column displayed; only used when
+      			'wrap' is off
       	loclist		1 if showing a location list
       	quickfix	1 if quickfix or location list window
       	terminal	1 if a terminal window
@@ -12683,7 +12686,7 @@ M.funcs = {
 
     ]=],
     name = 'virtcol',
-    params = { { 'expr', 'string|integer[]' }, { 'list', 'boolean' }, { 'winid', 'integer' } },
+    params = { { 'expr', 'string|any[]' }, { 'list', 'boolean' }, { 'winid', 'integer' } },
     signature = 'virtcol({expr} [, {list} [, {winid}]])',
   },
   virtcol2col = {

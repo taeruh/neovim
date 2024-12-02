@@ -144,6 +144,7 @@ func s:GetFilenameChecks() abort
     \ 'bzl': ['file.bazel', 'file.bzl', 'WORKSPACE', 'WORKSPACE.bzlmod'],
     \ 'bzr': ['bzr_log.any', 'bzr_log.file'],
     \ 'c': ['enlightenment/file.cfg', 'file.qc', 'file.c', 'some-enlightenment/file.cfg', 'file.mdh', 'file.epro'],
+    \ 'c3': ['file.c3', 'file.c3i', 'file.c3t'],
     \ 'cabal': ['file.cabal'],
     \ 'cabalconfig': ['cabal.config', expand("$HOME/.config/cabal/config")] + s:WhenConfigHome('$XDG_CONFIG_HOME/cabal/config'),
     \ 'cabalproject': ['cabal.project', 'cabal.project.local'],
@@ -210,7 +211,7 @@ func s:GetFilenameChecks() abort
     \ 'datascript': ['file.ds'],
     \ 'dcd': ['file.dcd'],
     \ 'debchangelog': ['changelog.Debian', 'changelog.dch', 'NEWS.Debian', 'NEWS.dch', '/debian/changelog'],
-    \ 'debcontrol': ['/debian/control', 'any/debian/control'],
+    \ 'debcontrol': ['/debian/control', 'any/debian/control', 'any/DEBIAN/control'],
     \ 'debcopyright': ['/debian/copyright', 'any/debian/copyright'],
     \ 'debsources': ['/etc/apt/sources.list', '/etc/apt/sources.list.d/file.list', 'any/etc/apt/sources.list', 'any/etc/apt/sources.list.d/file.list'],
     \ 'deb822sources': ['/etc/apt/sources.list.d/file.sources', 'any/etc/apt/sources.list.d/file.sources'],
@@ -353,17 +354,19 @@ func s:GetFilenameChecks() abort
     \ 'htmlm4': ['file.html.m4'],
     \ 'httest': ['file.htt', 'file.htb'],
     \ 'hurl': ['file.hurl'],
-    \ 'hyprlang': ['hyprlock.conf', 'hyprland.conf', 'hypridle.conf', 'hyprpaper.conf'],
+    \ 'hyprlang': ['hyprlock.conf', 'hyprland.conf', 'hypridle.conf', 'hyprpaper.conf', '/hypr/foo.conf'],
     \ 'i3config': ['/home/user/.i3/config', '/home/user/.config/i3/config', '/etc/i3/config', '/etc/xdg/i3/config'],
     \ 'ibasic': ['file.iba', 'file.ibi'],
     \ 'icemenu': ['/.icewm/menu', 'any/.icewm/menu'],
     \ 'icon': ['file.icn'],
+    \ 'idris2': ['file.idr'],
     \ 'indent': ['.indent.pro', 'indentrc'],
     \ 'inform': ['file.inf', 'file.INF'],
     \ 'initng': ['/etc/initng/any/file.i', 'file.ii', 'any/etc/initng/any/file.i'],
     \ 'inittab': ['inittab'],
     \ 'inko': ['file.inko'],
     \ 'ipfilter': ['ipf.conf', 'ipf6.conf', 'ipf.rules'],
+    \ 'ipkg': ['file.ipkg'],
     \ 'iss': ['file.iss'],
     \ 'ist': ['file.ist', 'file.mst'],
     \ 'j': ['file.ijs'],
@@ -390,6 +393,7 @@ func s:GetFilenameChecks() abort
     \ 'jsp': ['file.jsp'],
     \ 'julia': ['file.jl'],
     \ 'just': ['justfile', 'Justfile', '.justfile', 'config.just'],
+    \ 'karel': ['file.kl', 'file.KL'],
     \ 'kconfig': ['Kconfig', 'Kconfig.debug', 'Kconfig.file', 'Config.in', 'Config.in.host'],
     \ 'kdl': ['file.kdl'],
     \ 'kivy': ['file.kv'],
@@ -406,18 +410,20 @@ func s:GetFilenameChecks() abort
     \ 'lean': ['file.lean'],
     \ 'ledger': ['file.ldg', 'file.ledger', 'file.journal'],
     \ 'less': ['file.less'],
+    \ 'leo': ['file.leo'],
     \ 'lex': ['file.lex', 'file.l', 'file.lxx', 'file.l++'],
     \ 'lf': ['lfrc'],
     \ 'lftp': ['lftp.conf', '.lftprc', 'anylftp/rc', 'lftp/rc', 'some-lftp/rc'],
     \ 'lhaskell': ['file.lhs'],
     \ 'libao': ['/etc/libao.conf', '/.libao', 'any/.libao', 'any/etc/libao.conf'],
+    \ 'lidris2': ['file.lidr'],
     \ 'lifelines': ['file.ll'],
     \ 'lilo': ['lilo.conf', 'lilo.conf-file'],
     \ 'lilypond': ['file.ly', 'file.ily'],
     \ 'limits': ['/etc/limits', '/etc/anylimits.conf', '/etc/anylimits.d/file.conf', '/etc/limits.conf', '/etc/limits.d/file.conf', '/etc/some-limits.conf', '/etc/some-limits.d/file.conf', 'any/etc/limits', 'any/etc/limits.conf', 'any/etc/limits.d/file.conf', 'any/etc/some-limits.conf', 'any/etc/some-limits.d/file.conf'],
     \ 'liquidsoap': ['file.liq'],
     \ 'liquid': ['file.liquid'],
-    \ 'lisp': ['file.lsp', 'file.lisp', 'file.asd', 'file.el', 'file.cl', '.emacs', '.sawfishrc', 'sbclrc', '.sbclrc', 'file.stsg', 'any/local/share/supertux2/config'],
+    \ 'lisp': ['file.lsp', 'file.lisp', 'file.asd', 'file.el', '.emacs', '.sawfishrc', 'sbclrc', '.sbclrc', 'file.stsg', 'any/local/share/supertux2/config'],
     \ 'lite': ['file.lite', 'file.lt'],
     \ 'litestep': ['/LiteStep/any/file.rc', 'any/LiteStep/any/file.rc'],
     \ 'logcheck': ['/etc/logcheck/file.d-some/file', '/etc/logcheck/file.d/file', 'any/etc/logcheck/file.d-some/file', 'any/etc/logcheck/file.d/file'],
@@ -500,6 +506,7 @@ func s:GetFilenameChecks() abort
     \ 'mplayerconf': ['mplayer.conf', '/.mplayer/config', 'any/.mplayer/config'],
     \ 'mrxvtrc': ['mrxvtrc', '.mrxvtrc'],
     \ 'msidl': ['file.odl', 'file.mof'],
+    \ 'mss': ['file.mss'],
     \ 'msql': ['file.msql'],
     \ 'mojo': ['file.mojo', 'file.🔥'],
     \ 'msmtp': ['.msmtprc'],
@@ -603,7 +610,7 @@ func s:GetFilenameChecks() abort
     \ 'purescript': ['file.purs'],
     \ 'pymanifest': ['MANIFEST.in'],
     \ 'pyret': ['file.arr'],
-    \ 'pyrex': ['file.pyx', 'file.pxd'],
+    \ 'pyrex': ['file.pyx', 'file.pxd', 'file.pxi', 'file.pyx+'],
     \ 'python': ['file.py', 'file.pyw', '.pythonstartup', '.pythonrc', '.python_history', '.jline-jython.history', 'file.ptl', 'file.pyi', 'SConstruct'],
     \ 'ql': ['file.ql', 'file.qll'],
     \ 'qml': ['file.qml', 'file.qbs'],
@@ -878,7 +885,8 @@ func s:GetFilenameChecks() abort
     \ 'xsd': ['file.xsd'],
     \ 'xslt': ['file.xsl', 'file.xslt'],
     \ 'yacc': ['file.yy', 'file.yxx', 'file.y++'],
-    \ 'yaml': ['file.yaml', 'file.yml', 'file.eyaml', 'any/.bundle/config', '.clangd', '.clang-format', '.clang-tidy', 'file.mplstyle', 'matplotlibrc', 'yarn.lock'],
+    \ 'yaml': ['file.yaml', 'file.yml', 'file.eyaml', 'any/.bundle/config', '.clangd', '.clang-format', '.clang-tidy', 'file.mplstyle', 'matplotlibrc', 'yarn.lock',
+    \          '/home/user/.kube/config'],
     \ 'yang': ['file.yang'],
     \ 'yuck': ['file.yuck'],
     \ 'z8a': ['file.z8a'],
@@ -1182,6 +1190,22 @@ func Test_cfg_file()
   endfor
 
   " clean up
+  filetype off
+endfunc
+
+func Test_cl_file()
+  filetype on
+
+  call writefile(['/*', ' * Xfile.cl', ' */', 'int f() {}'], 'Xfile.cl')
+  split Xfile.cl
+  call assert_equal('opencl', &filetype)
+  bwipe!
+
+  call writefile(['()'], 'Xfile.cl')
+  split Xfile.cl
+  call assert_equal('lisp', &filetype)
+  bwipe!
+
   filetype off
 endfunc
 
@@ -2435,6 +2459,24 @@ func Test_inc_file()
   filetype off
 endfunc
 
+func Test_ll_file()
+  filetype on
+
+  " LLVM IR
+  call writefile(['target triple = "nvptx64-nvidia-cuda"'], 'Xfile.ll', 'D')
+  split Xfile.ll
+  call assert_equal('llvm', &filetype)
+  bwipe!
+
+  " lifelines
+  call writefile(['proc main() {}'], 'Xfile.ll', 'D')
+  split Xfile.ll
+  call assert_equal('lifelines', &filetype)
+  bwipe!
+
+  filetype off
+endfunc
+
 func Test_lsl_file()
   filetype on
 
@@ -2708,6 +2750,17 @@ func Test_make_file()
   call writefile(['# get the list of tests', 'include testdir/Make_all.mak'], 'XMakefile.mak', 'D')
   split XMakefile.mak
   call assert_equal(0, get(b:, 'make_microsoft', 0))
+  bwipe!
+
+  filetype off
+endfunc
+
+func Test_org_file()
+  filetype on
+
+  call writefile(['* org Headline', '*some bold text*', '/some italic text/'], 'Xfile.org', 'D')
+  split Xfile.org
+  call assert_equal('org', &filetype)
   bwipe!
 
   filetype off

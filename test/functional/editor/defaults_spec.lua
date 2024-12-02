@@ -35,7 +35,6 @@ describe('default', function()
         args = { '+autocmd! nvim_popupmenu', '+aunmenu PopUp' },
       }
       local screen = Screen.new(40, 8)
-      screen:attach()
       n.insert([[
         1 line 1
         2 https://example.com
@@ -58,7 +57,6 @@ describe('default', function()
     it('right-click on URL shows "Open in web browser"', function()
       n.clear()
       local screen = Screen.new(40, 8)
-      screen:attach()
       n.insert([[
         1 line 1
         2 https://example.com
@@ -97,10 +95,36 @@ describe('default', function()
 
   describe('key mappings', function()
     describe('unimpaired-style mappings', function()
-      it('do not show a full stack trace #30625', function()
+      it('show the command ouptut when successful', function()
         n.clear({ args_rm = { '--cmd' } })
         local screen = Screen.new(40, 8)
-        screen:attach()
+        n.fn.setqflist({
+          { filename = 'file1', text = 'item1' },
+          { filename = 'file2', text = 'item2' },
+        })
+
+        n.feed(']q')
+
+        screen:set_default_attr_ids({
+          [1] = { foreground = Screen.colors.NvimDarkGrey4 },
+          [2] = {
+            background = Screen.colors.NvimLightGray3,
+            foreground = Screen.colors.NvimDarkGrey3,
+          },
+        })
+        screen:expect({
+          grid = [[
+            ^                                        |
+            {1:~                                       }|*5
+            {2:file2                 0,0-1          All}|
+            (2 of 2): item2                         |
+          ]],
+        })
+      end)
+
+      it('do not show a full stack trace when unsuccessful #30625', function()
+        n.clear({ args_rm = { '--cmd' } })
+        local screen = Screen.new(40, 8)
         screen:set_default_attr_ids({
           [1] = { foreground = Screen.colors.NvimDarkGray4 },
           [2] = {
@@ -151,6 +175,101 @@ describe('default', function()
             {3:E73: Tag stack empty}                    |
           ]],
         })
+      end)
+
+      describe('[<Space>', function()
+        it('adds an empty line above the current line', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed('[<Space>')
+          n.expect([[
+
+          first line]])
+        end)
+
+        it('works with a count', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed('5[<Space>')
+          n.expect([[
+
+
+
+
+
+          first line]])
+        end)
+
+        it('supports dot repetition', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed('[<Space>')
+          n.feed('.')
+          n.expect([[
+
+
+          first line]])
+        end)
+
+        it('supports dot repetition and a count', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed('[<Space>')
+          n.feed('3.')
+          n.expect([[
+
+
+
+
+          first line]])
+        end)
+      end)
+
+      describe(']<Space>', function()
+        it('adds an empty line below the current line', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed(']<Space>')
+          n.expect([[
+          first line
+          ]])
+        end)
+
+        it('works with a count', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed('5]<Space>')
+          n.expect([[
+          first line
+
+
+
+
+          ]])
+        end)
+
+        it('supports dot repetition', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed(']<Space>')
+          n.feed('.')
+          n.expect([[
+          first line
+
+          ]])
+        end)
+
+        it('supports dot repetition and a count', function()
+          n.clear({ args_rm = { '--cmd' } })
+          n.insert([[first line]])
+          n.feed(']<Space>')
+          n.feed('2.')
+          n.expect([[
+          first line
+
+
+          ]])
+        end)
       end)
     end)
   end)

@@ -17,7 +17,6 @@ describe('completion', function()
   before_each(function()
     clear()
     screen = Screen.new(60, 8)
-    screen:attach()
     screen:add_extra_attr_ids {
       [100] = { foreground = Screen.colors.Gray0, background = Screen.colors.Yellow },
       [101] = { background = Screen.colors.Gray0 },
@@ -1303,5 +1302,15 @@ describe('completion', function()
       aaaaa                                                       |
       {5:-- INSERT --}                                                |
     ]])
+    -- Also when completion leader is changed #31384
+    feed('<Esc>hi<C-N><C-P>a')
+    screen:expect({
+      grid = [[
+        {9:aa}a^aa                                                       |
+        {4:aaaa           }                                             |
+        {4:aaaaa          }                                             |
+        {5:-- Keyword completion (^N^P) }{19:Back at original}               |
+      ]],
+    })
   end)
 end)

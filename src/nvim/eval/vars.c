@@ -810,9 +810,9 @@ static char *ex_let_option(char *arg, typval_T *const tv, const bool is_const,
   // Find the end of the name.
   char *arg_end = NULL;
   OptIndex opt_idx;
-  int scope;
+  int opt_flags;
 
-  char *const p = (char *)find_option_var_end((const char **)&arg, &opt_idx, &scope);
+  char *const p = (char *)find_option_var_end((const char **)&arg, &opt_idx, &opt_flags);
 
   if (p == NULL || (endchars != NULL && vim_strchr(endchars, (uint8_t)(*skipwhite(p))) == NULL)) {
     emsg(_(e_letunexp));
@@ -824,7 +824,7 @@ static char *ex_let_option(char *arg, typval_T *const tv, const bool is_const,
 
   bool is_tty_opt = is_tty_option(arg);
   bool hidden = is_option_hidden(opt_idx);
-  OptVal curval = is_tty_opt ? get_tty_option(arg) : get_option_value(opt_idx, scope);
+  OptVal curval = is_tty_opt ? get_tty_option(arg) : get_option_value(opt_idx, opt_flags);
   OptVal newval = NIL_OPTVAL;
 
   if (curval.type == kOptValTypeNil) {
@@ -881,7 +881,7 @@ static char *ex_let_option(char *arg, typval_T *const tv, const bool is_const,
     }
   }
 
-  const char *err = set_option_value_handle_tty(arg, opt_idx, newval, scope);
+  const char *err = set_option_value_handle_tty(arg, opt_idx, newval, opt_flags);
   arg_end = p;
   if (err != NULL) {
     emsg(_(err));
@@ -1403,11 +1403,12 @@ static void list_one_var(dictitem_T *v, const char *prefix, int *first)
 static void list_one_var_a(const char *prefix, const char *name, const ptrdiff_t name_len,
                            const VarType type, const char *string, int *first)
 {
+  msg_ext_set_kind("list_cmd");
   // don't use msg() to avoid overwriting "v:statusmsg"
   msg_start();
   msg_puts(prefix);
   if (name != NULL) {  // "a:" vars don't have a name stored
-    msg_puts_len(name, name_len, 0);
+    msg_puts_len(name, name_len, 0, false);
   }
   msg_putchar(' ');
   msg_advance(22);
@@ -1429,7 +1430,7 @@ static void list_one_var_a(const char *prefix, const char *name, const ptrdiff_t
     msg_putchar(' ');
   }
 
-  msg_outtrans(string, 0);
+  msg_outtrans(string, 0, false);
 
   if (type == VAR_FUNC || type == VAR_PARTIAL) {
     msg_puts("()");

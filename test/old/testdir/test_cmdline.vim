@@ -271,6 +271,12 @@ func Test_changing_cmdheight()
 
   let lines =<< trim END
       set cmdheight=1 laststatus=2
+      func EchoOne()
+        set laststatus=2 cmdheight=1
+        echo 'foo'
+        echo 'bar'
+        set cmdheight=2
+      endfunc
       func EchoTwo()
         set laststatus=2
         set cmdheight=5
@@ -305,6 +311,10 @@ func Test_changing_cmdheight()
   " setting 'cmdheight' works after outputting two messages
   call term_sendkeys(buf, ":call EchoTwo()\<CR>")
   call VerifyScreenDump(buf, 'Test_changing_cmdheight_6', {})
+
+  " increasing 'cmdheight' doesn't clear the messages that need hit-enter
+  call term_sendkeys(buf, ":call EchoOne()\<CR>")
+  call VerifyScreenDump(buf, 'Test_changing_cmdheight_7', {})
 
   " clean up
   call StopVimInTerminal(buf)
@@ -727,8 +737,8 @@ func Test_fullcommand()
         \ ':5s':        'substitute',
         \ "'<,'>s":     'substitute',
         \ ":'<,'>s":    'substitute',
-        \ 'CheckUni':   'CheckUnix',
-        \ 'CheckUnix':  'CheckUnix',
+        \ 'CheckLin':   'CheckLinux',
+        \ 'CheckLinux': 'CheckLinux',
   \ }
 
   for [in, want] in items(tests)
@@ -2319,6 +2329,7 @@ endfunc
 " Test for 'imcmdline' and 'imsearch'
 " This test doesn't actually test the input method functionality.
 func Test_cmdline_inputmethod()
+  throw 'Skipped: Nvim does not allow setting the value of a hidden option'
   new
   call setline(1, ['', 'abc', ''])
   set imcmdline
@@ -4025,6 +4036,27 @@ func Test_rulerformat_position()
   call StopVimInTerminal(buf)
 endfunc
 
+" Test for using "%!" in 'rulerformat' to use a function
+func Test_rulerformat_function()
+  CheckScreendump
+
+  let lines =<< trim END
+    func TestRulerFn()
+      return '10,20%=30%%'
+    endfunc
+  END
+  call writefile(lines, 'Xrulerformat_function', 'D')
+
+  let buf = RunVimInTerminal('-S Xrulerformat_function', #{rows: 2, cols: 40})
+  call term_sendkeys(buf, ":set ruler rulerformat=%!TestRulerFn()\<CR>")
+  call term_sendkeys(buf, ":redraw!\<CR>")
+  call term_wait(buf)
+  call VerifyScreenDump(buf, 'Test_rulerformat_function', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
+endfunc
+
 func Test_getcompletion_usercmd()
   command! -nargs=* -complete=command TestCompletion echo <q-args>
 
@@ -4147,6 +4179,32 @@ func Test_cd_bslash_completion_windows()
   call feedkeys(":cd XXXa\\_b\<C-A>\<C-B>\"\<CR>", 'tx')
   call assert_equal('"cd XXXa\_b\', @:)
   let &shellslash = save_shellslash
+endfunc
+
+func Test_msghistory()
+  " After setting 'msghistory' to 2 and outputting a message 4 times with
+  " :echomsg, is the number of output lines of :messages 2?
+  set msghistory=2
+  echomsg 'foo'
+  echomsg 'bar'
+  echomsg 'baz'
+  echomsg 'foobar'
+  call assert_equal(['baz', 'foobar'], GetMessages())
+
+  " When the number of messages is 10 and 'msghistory' is changed to 5, is the
+  " number of output lines of :messages 5?
+  set msghistory=10
+  for num in range(1, 10)
+    echomsg num
+  endfor
+  set msghistory=5
+  call assert_equal(5, len(GetMessages()))
+
+  " Check empty list
+  set msghistory=0
+  call assert_true(empty(GetMessages()))
+
+  set msghistory&
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

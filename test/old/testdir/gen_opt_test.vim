@@ -117,6 +117,7 @@ let test_values = {
       "\ 'imstyle': [[0, 1], [-1, 2, 999]],
       \ 'lines': [[2, 24, 1000], [-1, 0, 1]],
       \ 'linespace': [[-1, 0, 2, 4, 999], ['']],
+      \ 'msghistory': [[0, 1, 100, 10000], [-1, 10001]],
       \ 'numberwidth': [[1, 4, 8, 10, 11, 20], [-1, 0, 21]],
       \ 'regexpengine': [[0, 1, 2], [-1, 3, 999]],
       \ 'report': [[0, 1, 2, 9999], [-1]],
@@ -392,7 +393,7 @@ for option in options
   let fullname = option.full_name
   let shortname = get(option, 'abbreviation', fullname)
 
-  if get(option, 'immutable', v:false)
+  if !exists('+' .. fullname)
     continue
   endif
 

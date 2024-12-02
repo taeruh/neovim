@@ -1086,9 +1086,9 @@ vim.go.cia = vim.go.completeitemalign
 --- 	    a match from the menu. Only works in combination with
 --- 	    "menu" or "menuone". No effect if "longest" is present.
 ---
----    noselect Do not select a match in the menu, force the user to
---- 	    select one from the menu. Only works in combination with
---- 	    "menu" or "menuone".
+---    noselect Same as "noinsert", except that no menu item is
+--- 	    pre-selected. If both "noinsert" and "noselect" are present,
+--- 	    "noselect" has precedence.
 ---
 ---    fuzzy    Enable `fuzzy-matching` for completion candidates. This
 --- 	    allows for more flexible and intuitive matching, where
@@ -1106,7 +1106,7 @@ vim.bo.cot = vim.bo.completeopt
 vim.go.completeopt = vim.o.completeopt
 vim.go.cot = vim.go.completeopt
 
---- 		only for MS-Windows
+--- 		only modifiable in MS-Windows
 --- When this option is set it overrules 'shellslash' for completion:
 --- - When this option is set to "slash", a forward slash is used for path
 ---   completion in insert mode. This is useful when editing HTML tag, or
@@ -3016,7 +3016,8 @@ vim.go.hid = vim.go.hidden
 
 --- A history of ":" commands, and a history of previous search patterns
 --- is remembered.  This option decides how many entries may be stored in
---- each of these histories (see `cmdline-editing`).
+--- each of these histories (see `cmdline-editing` and 'msghistory' for
+--- the number of messages to remember).
 --- The maximum value is 10000.
 ---
 --- @type integer
@@ -4378,6 +4379,16 @@ vim.o.mouset = vim.o.mousetime
 vim.go.mousetime = vim.o.mousetime
 vim.go.mouset = vim.go.mousetime
 
+--- Determines how many entries are remembered in the `:messages` history.
+--- The maximum value is 10000.
+--- Setting it to zero clears the message history.
+---
+--- @type integer
+vim.o.msghistory = 500
+vim.o.mhi = vim.o.msghistory
+vim.go.msghistory = vim.o.msghistory
+vim.go.mhi = vim.go.msghistory
+
 --- This defines what bases Vim will consider for numbers when using the
 --- CTRL-A and CTRL-X commands for adding to and subtracting from a number
 --- respectively; see `CTRL-A` for more info on these commands.
@@ -5547,7 +5558,7 @@ vim.o.srr = vim.o.shellredir
 vim.go.shellredir = vim.o.shellredir
 vim.go.srr = vim.go.shellredir
 
---- 		only for MS-Windows
+--- 		only modifiable in MS-Windows
 --- When set, a forward slash is used when expanding file names.  This is
 --- useful when a Unix-like shell is used instead of cmd.exe.  Backward
 --- slashes can still be typed, but they are changed to forward slashes by
@@ -5564,7 +5575,7 @@ vim.go.srr = vim.go.shellredir
 --- Also see 'completeslash'.
 ---
 --- @type boolean
-vim.o.shellslash = false
+vim.o.shellslash = true
 vim.o.ssl = vim.o.shellslash
 vim.go.shellslash = vim.o.shellslash
 vim.go.ssl = vim.go.shellslash
@@ -6300,6 +6311,7 @@ vim.wo.stc = vim.wo.statuscolumn
 --- All fields except the {item} are optional.  A single percent sign can
 --- be given as "%%".
 ---
+--- 						*stl-%!*
 --- When the option starts with "%!" then it is used as an expression,
 --- evaluated and the result is used as the option value.  Example:
 ---
@@ -7112,6 +7124,13 @@ vim.go.titleold = vim.o.titleold
 --- expanded according to the rules used for 'statusline'.  If it contains
 --- an invalid '%' format, the value is used as-is and no error or warning
 --- will be given when the value is set.
+---
+--- The default behaviour is equivalent to:
+---
+--- ```vim
+---     set titlestring=%t%(\ %M%)%(\ \(%{expand(\"%:~:h\")}\)%)%a\ -\ Nvim
+--- ```
+---
 --- This option cannot be set in a modeline when 'modelineexpr' is off.
 ---
 --- Example:

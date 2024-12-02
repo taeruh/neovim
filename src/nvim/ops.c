@@ -257,7 +257,7 @@ void op_shift(oparg_T *oap, bool curs_top, int amount)
     vim_snprintf(IObuff, IOSIZE,
                  NGETTEXT(msg_line_single, msg_line_plural, oap->line_count),
                  (int64_t)oap->line_count, op, amount);
-    msg_attr_keep(IObuff, 0, true, false);
+    msg_hl_keep(IObuff, 0, true, false);
   }
 
   if ((cmdmod.cmod_flags & CMOD_LOCKMARKS) == 0) {
@@ -2187,7 +2187,7 @@ void op_insert(oparg_T *oap, int count1)
       if (u_save_cursor() == FAIL) {
         return;
       }
-      curwin->w_ve_flags = VE_ALL;
+      curwin->w_ve_flags = kOptVeFlagAll;
       coladvance_force(oap->op_type == OP_APPEND
                        ? oap->end_vcol + 1 : getviscol());
       if (oap->op_type == OP_APPEND) {
@@ -2873,7 +2873,7 @@ void do_put(int regname, yankreg_T *reg, int dir, int count, int flags)
           eol = (*(cursor_pos + utfc_ptr2len(cursor_pos)) == NUL);
         }
 
-        bool ve_allows = (cur_ve_flags == VE_ALL || cur_ve_flags == VE_ONEMORE);
+        bool ve_allows = (cur_ve_flags == kOptVeFlagAll || cur_ve_flags == kOptVeFlagOnemore);
         bool eof = curbuf->b_ml.ml_line_count == curwin->w_cursor.lnum
                    && one_past_line;
         if (ve_allows || !(eol || eof)) {
@@ -3057,7 +3057,7 @@ void do_put(int regname, yankreg_T *reg, int dir, int count, int flags)
     goto end;
   }
 
-  if (cur_ve_flags == VE_ALL && y_type == kMTCharWise) {
+  if (cur_ve_flags == kOptVeFlagAll && y_type == kMTCharWise) {
     if (gchar_cursor() == TAB) {
       int viscol = getviscol();
       OptInt ts = curbuf->b_p_ts;
@@ -3086,7 +3086,7 @@ void do_put(int regname, yankreg_T *reg, int dir, int count, int flags)
     colnr_T endcol2 = 0;
 
     if (dir == FORWARD && c != NUL) {
-      if (cur_ve_flags == VE_ALL) {
+      if (cur_ve_flags == kOptVeFlagAll) {
         getvcol(curwin, &curwin->w_cursor, &col, NULL, &endcol2);
       } else {
         getvcol(curwin, &curwin->w_cursor, NULL, NULL, &col);
@@ -3100,7 +3100,7 @@ void do_put(int regname, yankreg_T *reg, int dir, int count, int flags)
     }
 
     col += curwin->w_cursor.coladd;
-    if (cur_ve_flags == VE_ALL
+    if (cur_ve_flags == kOptVeFlagAll
         && (curwin->w_cursor.coladd > 0 || endcol2 == curwin->w_cursor.col)) {
       if (dir == FORWARD && c == NUL) {
         col++;
@@ -3560,7 +3560,7 @@ error:
   // Make sure the cursor is not after the NUL.
   int len = get_cursor_line_len();
   if (curwin->w_cursor.col > len) {
-    if (cur_ve_flags == VE_ALL) {
+    if (cur_ve_flags == kOptVeFlagAll) {
       curwin->w_cursor.coladd = curwin->w_cursor.col - len;
     }
     curwin->w_cursor.col = len;
@@ -3592,7 +3592,7 @@ void adjust_cursor_eol(void)
 
   const bool adj_cursor = (curwin->w_cursor.col > 0
                            && gchar_cursor() == NUL
-                           && (cur_ve_flags & VE_ONEMORE) == 0
+                           && (cur_ve_flags & kOptVeFlagOnemore) == 0
                            && !(restart_edit || (State & MODE_INSERT)));
   if (!adj_cursor) {
     return;
@@ -3601,7 +3601,7 @@ void adjust_cursor_eol(void)
   // Put the cursor on the last character in the line.
   dec_cursor();
 
-  if (cur_ve_flags == VE_ALL) {
+  if (cur_ve_flags == kOptVeFlagAll) {
     colnr_T scol, ecol;
 
     // Coladd is set to the width of the last character.
@@ -3653,7 +3653,7 @@ void ex_display(exarg_T *eap)
   if (arg != NULL && *arg == NUL) {
     arg = NULL;
   }
-  int attr = HL_ATTR(HLF_8);
+  int hl_id = HLF_8;
 
   // Highlight title
   msg_puts_title(_("\nType Name Content"));
@@ -3709,18 +3709,18 @@ void ex_display(exarg_T *eap)
         int n = Columns - 11;
         for (size_t j = 0; j < yb->y_size && n > 1; j++) {
           if (j) {
-            msg_puts_attr("^J", attr);
+            msg_puts_hl("^J", hl_id, false);
             n -= 2;
           }
           for (p = yb->y_array[j].data;
                *p != NUL && (n -= ptr2cells(p)) >= 0; p++) {
             int clen = utfc_ptr2len(p);
-            msg_outtrans_len(p, clen, 0);
+            msg_outtrans_len(p, clen, 0, false);
             p += clen - 1;
           }
         }
         if (n > 1 && yb->y_type == kMTLineWise) {
-          msg_puts_attr("^J", attr);
+          msg_puts_hl("^J", hl_id, false);
         }
       }
       os_breakcheck();
@@ -3790,10 +3790,10 @@ static void dis_msg(const char *p, bool skip_esc)
          && (n -= ptr2cells(p)) >= 0) {
     int l;
     if ((l = utfc_ptr2len(p)) > 1) {
-      msg_outtrans_len(p, l, 0);
+      msg_outtrans_len(p, l, 0, false);
       p += l;
     } else {
-      msg_outtrans_len(p++, 1, 0);
+      msg_outtrans_len(p++, 1, 0, false);
     }
   }
   os_breakcheck();
@@ -6076,7 +6076,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_DELETE:
       VIsual_reselect = false;              // don't reselect now
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         op_delete(oap);
@@ -6092,7 +6092,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_YANK:
       if (empty_region_error) {
         if (!gui_yank) {
-          vim_beep(BO_OPER);
+          vim_beep(kOptBoFlagOperator);
           CancelRedo();
         }
       } else {
@@ -6106,7 +6106,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_CHANGE:
       VIsual_reselect = false;              // don't reselect now
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         // This is a new edit command, not a restart.  Need to
@@ -6169,7 +6169,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_LOWER:
     case OP_ROT13:
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         op_tilde(oap);
@@ -6211,7 +6211,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_APPEND:
       VIsual_reselect = false;          // don't reselect now
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         // This is a new edit command, not a restart.  Need to
@@ -6246,7 +6246,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_REPLACE:
       VIsual_reselect = false;          // don't reselect now
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         // Restore linebreak, so that when the user edits it looks as before.
@@ -6284,7 +6284,7 @@ void do_pending_operator(cmdarg_T *cap, int old_col, bool gui_yank)
     case OP_NR_ADD:
     case OP_NR_SUB:
       if (empty_region_error) {
-        vim_beep(BO_OPER);
+        vim_beep(kOptBoFlagOperator);
         CancelRedo();
       } else {
         VIsual_active = true;
@@ -6344,7 +6344,7 @@ static yankreg_T *adjust_clipboard_name(int *name, bool quiet, bool writing)
 
   yankreg_T *target = NULL;
   bool explicit_cb_reg = (*name == '*' || *name == '+');
-  bool implicit_cb_reg = (*name == NUL) && (cb_flags & CB_UNNAMEDMASK);
+  bool implicit_cb_reg = (*name == NUL) && (cb_flags & (kOptCbFlagUnnamed | kOptCbFlagUnnamedplus));
   if (!explicit_cb_reg && !implicit_cb_reg) {
     goto end;
   }
@@ -6363,7 +6363,7 @@ static yankreg_T *adjust_clipboard_name(int *name, bool quiet, bool writing)
 
   if (explicit_cb_reg) {
     target = &y_regs[*name == '*' ? STAR_REGISTER : PLUS_REGISTER];
-    if (writing && (cb_flags & (*name == '*' ? CB_UNNAMED : CB_UNNAMEDPLUS))) {
+    if (writing && (cb_flags & (*name == '*' ? kOptCbFlagUnnamed : kOptCbFlagUnnamedplus))) {
       clipboard_needs_update = false;
     }
     goto end;
@@ -6377,8 +6377,8 @@ static yankreg_T *adjust_clipboard_name(int *name, bool quiet, bool writing)
       goto end;
     }
 
-    if (cb_flags & CB_UNNAMEDPLUS) {
-      *name = (cb_flags & CB_UNNAMED && writing) ? '"' : '+';
+    if (cb_flags & kOptCbFlagUnnamedplus) {
+      *name = (cb_flags & kOptCbFlagUnnamed && writing) ? '"' : '+';
       target = &y_regs[PLUS_REGISTER];
     } else {
       *name = '*';

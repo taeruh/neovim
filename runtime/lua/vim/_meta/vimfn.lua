@@ -828,7 +828,7 @@ function vim.fn.charclass(string) end
 ---   echo col('.')    " returns 7
 --- <
 ---
---- @param expr string|integer[]
+--- @param expr string|any[]
 --- @param winid? integer
 --- @return integer
 function vim.fn.charcol(expr, winid) end
@@ -956,7 +956,7 @@ function vim.fn.clearmatches(win) end
 ---   imap <F2> <Cmd>echo col(".").."\n"<CR>
 --- <
 ---
---- @param expr string|integer[]
+--- @param expr string|any[]
 --- @param winid? integer
 --- @return integer
 function vim.fn.col(expr, winid) end
@@ -3885,6 +3885,8 @@ function vim.fn.gettext(text) end
 ---   botline    last complete displayed buffer line
 ---   bufnr    number of buffer in the window
 ---   height    window height (excluding winbar)
+---   leftcol    first column displayed; only used when
+---       'wrap' is off
 ---   loclist    1 if showing a location list
 ---   quickfix  1 if quickfix or location list window
 ---   terminal  1 if a terminal window
@@ -10546,7 +10548,7 @@ function vim.fn.values(dict) end
 ---     echo max(map(range(1, line('$')), "virtcol([v:val, '$'])"))
 --- <
 ---
---- @param expr string|integer[]
+--- @param expr string|any[]
 --- @param list? boolean
 --- @param winid? integer
 --- @return any

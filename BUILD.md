@@ -12,6 +12,7 @@
     - To build on Windows, see the [Building on Windows](#building-on-windows) section. _MSVC (Visual Studio) is recommended._
 4. `sudo make install`
     - Default install location is `/usr/local`
+    - On Debian/Ubuntu, instead of `sudo make install`, you can try `cd build && cpack -G DEB && sudo dpkg -i nvim-linux64.deb` to build DEB-package and install it. This helps ensure clean removal of installed files. Note: This is an unsupported, "best-effort" feature of the Nvim build.
 
 **Notes**:
 - From the repository's root directory, running `make` will download and build all the needed dependencies and put the `nvim` executable in `build/bin`.
@@ -130,12 +131,12 @@ https://github.com/cascent/neovim-cygwin was built on Cygwin 2.9.0. Newer `libuv
 1. From the MSYS2 shell, install these packages:
    ```
    pacman -S \
-       mingw-w64-x86_64-{gcc,cmake,make,ninja,diffutils}
+       mingw-w64-ucrt-x86_64-{gcc,cmake,make,ninja,diffutils}
    ```
 2. From the Windows Command Prompt (`cmd.exe`), set up the `PATH` and build.
 
    ```cmd
-   set PATH=c:\msys64\mingw64\bin;c:\msys64\usr\bin;%PATH%
+   set PATH=c:\msys64\ucrt64\bin;c:\msys64\usr\bin;%PATH%
    ```
 3. You have two options:
     - Build using `cmake` and `Ninja` generator:
