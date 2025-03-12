@@ -34,7 +34,6 @@
 #include "nvim/option.h"
 #include "nvim/option_defs.h"
 #include "nvim/option_vars.h"
-#include "nvim/optionstr.h"
 #include "nvim/os/input.h"
 #include "nvim/plines.h"
 #include "nvim/pos_defs.h"
@@ -1182,7 +1181,7 @@ int get_expr_indent(void)
     sandbox++;
   }
   textlock++;
-  current_sctx = curbuf->b_p_script_ctx[kBufOptIndentexpr].script_ctx;
+  current_sctx = curbuf->b_p_script_ctx[kBufOptIndentexpr];
 
   // Need to make a copy, the 'indentexpr' option could be changed while
   // evaluating it.

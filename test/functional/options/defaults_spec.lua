@@ -14,7 +14,6 @@ local api = n.api
 local command = n.command
 local clear = n.clear
 local exc_exec = n.exc_exec
-local exec_lua = n.exec_lua
 local eval = n.eval
 local eq = t.eq
 local ok = t.ok
@@ -889,8 +888,9 @@ describe('stdpath()', function()
     os.remove(testlog)
   end)
 
-  -- Windows appends 'nvim-data' instead of just 'nvim' to prevent collisions
-  -- due to XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_STATE_HOME being the same.
+  --- Windows appends 'nvim-data' instead of just 'nvim' to prevent collisions
+  --- due to XDG_CONFIG_HOME, XDG_DATA_HOME and XDG_STATE_HOME being the same.
+  --- @param name string
   local function maybe_data(name)
     return is_os('win') and name .. '-data' or name
   end
@@ -899,7 +899,7 @@ describe('stdpath()', function()
   local statedir = maybe_data('nvim')
   local env_sep = is_os('win') and ';' or ':'
 
-  it('acceptance', function()
+  it('works', function()
     clear() -- Do not explicitly set any env vars.
 
     eq('nvim', fn.fnamemodify(fn.stdpath('cache'), ':t'))
@@ -910,6 +910,15 @@ describe('stdpath()', function()
     eq('table', type(fn.stdpath('data_dirs')))
     eq('string', type(fn.stdpath('run')))
     assert_alive() -- Check for crash. #8393
+  end)
+
+  it('failure modes', function()
+    clear()
+    eq('Vim(call):E6100: "capybara" is not a valid stdpath', exc_exec('call stdpath("capybara")'))
+    eq('Vim(call):E6100: "" is not a valid stdpath', exc_exec('call stdpath("")'))
+    eq('Vim(call):E6100: "23" is not a valid stdpath', exc_exec('call stdpath(23)'))
+    eq('Vim(call):E731: Using a Dictionary as a String', exc_exec('call stdpath({"eris": 23})'))
+    eq('Vim(call):E730: Using a List as a String', exc_exec('call stdpath([23])'))
   end)
 
   it('$NVIM_APPNAME', function()
@@ -929,17 +938,12 @@ describe('stdpath()', function()
     assert_alive() -- Check for crash. #8393
 
     -- Check that Nvim rejects invalid APPNAMEs
-    -- Call jobstart() and jobwait() in the same RPC request to reduce flakiness.
     local function test_appname(testAppname, expected_exitcode)
-      local lua_code = string.format(
-        [[
-        local child = vim.fn.jobstart({ vim.v.progpath, '--clean', '--headless', '--listen', 'x', '+qall!' }, { env = { NVIM_APPNAME = %q } })
-        return vim.fn.jobwait({ child }, %d)[1]
-      ]],
-        testAppname,
-        3000
-      )
-      eq(expected_exitcode, exec_lua(lua_code))
+      local p = n.spawn_wait({
+        args = { '--listen', 'x', '+qall!' },
+        env = { NVIM_APPNAME = testAppname },
+      })
+      eq(expected_exitcode, p.status)
     end
     -- Invalid appnames:
     test_appname('a/../b', 1)
@@ -1267,21 +1271,6 @@ describe('stdpath()', function()
         t.fix_slashes('~/.oldconfig/nvim'),
         t.fix_slashes('~/.olderconfig/nvim'),
       })
-    end)
-  end)
-
-  describe('errors', function()
-    before_each(clear)
-
-    it('on unknown strings', function()
-      eq('Vim(call):E6100: "capybara" is not a valid stdpath', exc_exec('call stdpath("capybara")'))
-      eq('Vim(call):E6100: "" is not a valid stdpath', exc_exec('call stdpath("")'))
-      eq('Vim(call):E6100: "23" is not a valid stdpath', exc_exec('call stdpath(23)'))
-    end)
-
-    it('on non-strings', function()
-      eq('Vim(call):E731: Using a Dictionary as a String', exc_exec('call stdpath({"eris": 23})'))
-      eq('Vim(call):E730: Using a List as a String', exc_exec('call stdpath([23])'))
     end)
   end)
 end)

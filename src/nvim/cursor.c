@@ -11,6 +11,7 @@
 #include "nvim/drawscreen.h"
 #include "nvim/fold.h"
 #include "nvim/globals.h"
+#include "nvim/macros_defs.h"
 #include "nvim/mark.h"
 #include "nvim/mbyte.h"
 #include "nvim/mbyte_defs.h"
@@ -129,7 +130,7 @@ static int coladvance2(win_T *wp, pos_T *pos, bool addspaces, bool finetune, col
         && wp->w_width_inner != 0
         && wcol >= (colnr_T)width
         && width > 0) {
-      csize = linetabsize(wp, pos->lnum);
+      csize = linetabsize_eol(wp, pos->lnum);
       if (csize > 0) {
         csize--;
       }
@@ -341,9 +342,11 @@ void check_cursor_col(win_T *win)
   } else if (win->w_cursor.col >= len) {
     // Allow cursor past end-of-line when:
     // - in Insert mode or restarting Insert mode
+    // - in Terminal mode
     // - in Visual mode and 'selection' isn't "old"
     // - 'virtualedit' is set
     if ((State & MODE_INSERT) || restart_edit
+        || (State & MODE_TERMINAL)
         || (VIsual_active && *p_sel != 'o')
         || (cur_ve_flags & kOptVeFlagOnemore)
         || virtual_active(win)) {

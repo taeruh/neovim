@@ -26,6 +26,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <iconv.h>
+#include <limits.h>
 #include <locale.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -51,7 +52,6 @@
 #include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/grid.h"
-#include "nvim/grid_defs.h"
 #include "nvim/iconv_defs.h"
 #include "nvim/keycodes.h"
 #include "nvim/macros_defs.h"
@@ -2246,24 +2246,6 @@ int mb_charlen(const char *str)
 
   for (count = 0; *p != NUL; count++) {
     p += utfc_ptr2len(p);
-  }
-
-  return count;
-}
-
-int mb_charlen2bytelen(const char *str, int charlen)
-{
-  const char *p = str;
-  int count = 0;
-
-  if (p == NULL) {
-    return 0;
-  }
-
-  for (int i = 0; *p != NUL && i < charlen; i++) {
-    int b = utfc_ptr2len(p);
-    p += b;
-    count += b;
   }
 
   return count;

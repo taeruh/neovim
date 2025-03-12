@@ -17,7 +17,7 @@ local hi = function(name, val)
   val.force = true
 
   -- Make sure that `cterm` attribute is not populated from `gui`
-  val.cterm = val.cterm or {}
+  val.cterm = val.cterm or {} ---@type vim.api.keyset.highlight
 
   -- Define global highlight
   vim.api.nvim_set_hl(0, name, val)
@@ -60,6 +60,7 @@ hi('PmenuMatch',     { link = 'Pmenu' })
 hi('PmenuMatchSel',  { link = 'PmenuSel' })
 hi('PmenuExtra',     { link = 'Pmenu' })
 hi('PmenuExtraSel',  { link = 'PmenuSel' })
+hi('ComplMatchIns',  {})
 hi('Substitute',     { link = 'Search' })
 hi('Whitespace',     { link = 'NonText' })
 hi('MsgSeparator',   { link = 'StatusLine' })

@@ -56,8 +56,9 @@ vim._extra = {
   inspect_pos = true,
 }
 
---- @private
+--- @nodoc
 vim.log = {
+  --- @enum vim.log.levels
   levels = {
     TRACE = 0,
     DEBUG = 1,
@@ -92,7 +93,7 @@ local utfs = {
 ---
 --- -- Runs synchronously:
 --- local obj = vim.system({'echo', 'hello'}, { text = true }):wait()
---- -- { code = 0, signal = 0, stdout = 'hello', stderr = '' }
+--- -- { code = 0, signal = 0, stdout = 'hello\n', stderr = '' }
 ---
 --- ```
 ---
@@ -390,7 +391,7 @@ end
 
 local VIM_CMD_ARG_MAX = 20
 
---- Executes Vim script commands.
+--- Executes Vimscript (|Ex-commands|).
 ---
 --- Note that `vim.cmd` can be indexed with a command name to return a callable function to the
 --- command.
@@ -424,8 +425,9 @@ local VIM_CMD_ARG_MAX = 20
 --- vim.cmd.colorscheme('blue')
 --- ```
 ---
+---@diagnostic disable-next-line: undefined-doc-param
 ---@param command string|table Command(s) to execute.
----                            If a string, executes multiple lines of Vim script at once. In this
+---                            If a string, executes multiple lines of Vimscript at once. In this
 ---                            case, it is an alias to |nvim_exec2()|, where `opts.output` is set
 ---                            to false. Thus it works identical to |:source|.
 ---                            If a table, executes a single command. In this case, it is an alias
@@ -440,10 +442,12 @@ vim.cmd = setmetatable({}, {
       return ''
     end
   end,
+  --- @param t table<string,function>
   __index = function(t, command)
     t[command] = function(...)
-      local opts
+      local opts --- @type vim.api.keyset.cmd
       if select('#', ...) == 1 and type(select(1, ...)) == 'table' then
+        --- @type vim.api.keyset.cmd
         opts = select(1, ...)
 
         -- Move indexed positions in opts to opt.args
@@ -454,6 +458,7 @@ vim.cmd = setmetatable({}, {
               break
             end
             opts.args[i] = opts[i]
+            --- @diagnostic disable-next-line: no-unknown
             opts[i] = nil
           end
         end
@@ -528,7 +533,7 @@ function vim.region(bufnr, pos1, pos2, regtype, inclusive)
   end
 
   if pos1[1] > pos2[1] or (pos1[1] == pos2[1] and pos1[2] > pos2[2]) then
-    pos1, pos2 = pos2, pos1
+    pos1, pos2 = pos2, pos1 --- @type [integer, integer], [integer, integer]
   end
 
   -- getpos() may return {0,0,0,0}
@@ -620,13 +625,8 @@ end
 ---@param opts table|nil Optional parameters. Unused by default.
 ---@diagnostic disable-next-line: unused-local
 function vim.notify(msg, level, opts) -- luacheck: no unused args
-  if level == vim.log.levels.ERROR then
-    vim.api.nvim_err_writeln(msg)
-  elseif level == vim.log.levels.WARN then
-    vim.api.nvim_echo({ { msg, 'WarningMsg' } }, true, {})
-  else
-    vim.api.nvim_echo({ { msg } }, true, {})
-  end
+  local chunks = { { msg, level == vim.log.levels.WARN and 'WarningMsg' or nil } }
+  vim.api.nvim_echo(chunks, true, { err = level == vim.log.levels.ERROR })
 end
 
 do
@@ -705,6 +705,7 @@ function vim._on_key(buf, typed_buf)
   local discard = false
   for k, v in pairs(on_key_cbs) do
     local fn = v[1]
+    --- @type boolean, any
     local ok, rv = xpcall(function()
       return fn(buf, typed_buf)
     end, debug.traceback)
@@ -832,6 +833,7 @@ function vim.str_utfindex(s, encoding, index, strict_indexing)
     -- Return (multiple): ~
     --     (`integer`) UTF-32 index
     --     (`integer`) UTF-16 index
+    --- @diagnostic disable-next-line: redundant-return-value
     return col32, col16
   end
 
@@ -911,6 +913,7 @@ function vim._expand_pat(pat, env)
 
   local match_part = string.sub(last_part, search_index, #last_part)
   local prefix_match_pat = string.sub(pat, 1, #pat - #match_part) or ''
+  local last_char = string.sub(last_part, #last_part)
 
   local final_env = env
 
@@ -969,6 +972,7 @@ function vim._expand_pat(pat, env)
         type(k) == 'string'
         and string.sub(k, 1, string.len(match_part)) == match_part
         and k:match('^[_%w]+$') ~= nil -- filter out invalid identifiers for field, e.g. 'foo#bar'
+        and (last_char ~= '.' or string.sub(k, 1, 1) ~= '_') -- don't include private fields after '.'
       then
         keys[k] = true
       end
@@ -1004,7 +1008,7 @@ function vim._expand_pat(pat, env)
         or vim.v == final_env and { 'v:', 'var' }
         or { nil, nil }
     )
-    assert(prefix, "Can't resolve final_env")
+    assert(prefix and type, "Can't resolve final_env")
     local vars = vim.fn.getcompletion(prefix .. match_part, type) --- @type string[]
     insert_keys(vim
       .iter(vars)
@@ -1138,6 +1142,21 @@ do
   end
 end
 
+--- @param inspect_strings boolean use vim.inspect() for strings
+function vim._print(inspect_strings, ...)
+  local msg = {}
+  for i = 1, select('#', ...) do
+    local o = select(i, ...)
+    if not inspect_strings and type(o) == 'string' then
+      table.insert(msg, o)
+    else
+      table.insert(msg, vim.inspect(o, { newline = '\n', indent = '  ' }))
+    end
+  end
+  print(table.concat(msg, '\n'))
+  return ...
+end
+
 --- "Pretty prints" the given arguments and returns them unmodified.
 ---
 --- Example:
@@ -1151,17 +1170,7 @@ end
 --- @param ... any
 --- @return any # given arguments.
 function vim.print(...)
-  local msg = {}
-  for i = 1, select('#', ...) do
-    local o = select(i, ...)
-    if type(o) == 'string' then
-      table.insert(msg, o)
-    else
-      table.insert(msg, vim.inspect(o, { newline = '\n', indent = '  ' }))
-    end
-  end
-  print(table.concat(msg, '\n'))
-  return ...
+  return vim._print(false, ...)
 end
 
 --- Translates keycodes.

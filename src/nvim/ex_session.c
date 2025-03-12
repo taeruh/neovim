@@ -9,10 +9,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "klib/kvec.h"
 #include "nvim/arglist.h"
 #include "nvim/arglist_defs.h"
 #include "nvim/ascii_defs.h"
 #include "nvim/autocmd.h"
+#include "nvim/autocmd_defs.h"
 #include "nvim/buffer.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/errors.h"
@@ -659,9 +661,8 @@ static int makeopens(FILE *fd, char *dirnow)
         && buf->b_fname != NULL
         && buf->b_p_bl) {
       if (fprintf(fd, "badd +%" PRId64 " ",
-                  buf->b_wininfo == NULL
-                  ? 1
-                  : (int64_t)buf->b_wininfo->wi_mark.mark.lnum) < 0
+                  kv_size(buf->b_wininfo) == 0
+                  ? 1 : (int64_t)kv_A(buf->b_wininfo, 0)->wi_mark.mark.lnum) < 0
           || ses_fname(fd, buf, &ssop_flags, true) == FAIL) {
         return FAIL;
       }

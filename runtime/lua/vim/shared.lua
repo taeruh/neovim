@@ -7,8 +7,7 @@
 -- so this wouldn't be a separate case to consider)
 
 ---@nodoc
----@diagnostic disable-next-line: lowercase-global
-vim = vim or {}
+_G.vim = _G.vim or {} --[[@as table]] -- TODO(lewis6991): better fix for flaky luals
 
 ---@generic T
 ---@param orig T
@@ -527,15 +526,15 @@ end
 ---@param ... any Optional keys (0 or more, variadic) via which to index the table
 ---@return any # Nested value indexed by key (if it exists), else nil
 function vim.tbl_get(o, ...)
-  local keys = { ... }
-  if #keys == 0 then
+  local nargs = select('#', ...)
+  if nargs == 0 then
     return nil
   end
-  for i, k in ipairs(keys) do
-    o = o[k] --- @type any
+  for i = 1, nargs do
+    o = o[select(i, ...)] --- @type any
     if o == nil then
       return nil
-    elseif type(o) ~= 'table' and next(keys, i) then
+    elseif type(o) ~= 'table' and i ~= nargs then
       return nil
     end
   end
@@ -959,7 +958,7 @@ do
   ---       function vim.startswith(s, prefix)
   ---         vim.validate('s', s, 'string')
   ---         vim.validate('prefix', prefix, 'string')
-  ---         ...
+  ---         -- ...
   ---       end
   ---     ```
   ---
@@ -979,7 +978,7 @@ do
   ---           age={age, 'number'},
   ---           hobbies={hobbies, 'table'},
   ---         }
-  ---         ...
+  ---         -- ...
   ---       end
   ---     ```
   ---
@@ -1013,7 +1012,7 @@ do
   --- best performance.
   ---
   --- @param name string Argument name
-  --- @param value string Argument value
+  --- @param value any Argument value
   --- @param validator vim.validate.Validator
   ---   - (`string|string[]`): Any value that can be returned from |lua-type()| in addition to
   ---     `'callable'`: `'boolean'`, `'callable'`, `'function'`, `'nil'`, `'number'`, `'string'`, `'table'`,
@@ -1397,6 +1396,26 @@ function vim._with(context, f)
   end
 
   return vim._with_c(context, callback)
+end
+
+--- @param bufnr? integer
+--- @return integer
+function vim._resolve_bufnr(bufnr)
+  if bufnr == nil or bufnr == 0 then
+    return vim.api.nvim_get_current_buf()
+  end
+  vim.validate('bufnr', bufnr, 'number')
+  return bufnr
+end
+
+--- @generic T
+--- @param x elem_or_list<T>?
+--- @return T[]
+function vim._ensure_list(x)
+  if type(x) == 'table' then
+    return x
+  end
+  return { x }
 end
 
 return vim

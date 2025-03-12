@@ -246,12 +246,6 @@ Added		added line in a diff
 Changed		changed line in a diff
 Removed		removed line in a diff
 
-The names marked with * are the preferred groups; the others are minor groups.
-For the preferred groups, the "syntax.vim" file contains default highlighting.
-The minor groups are linked to the preferred groups, so they get the same
-highlighting.  You can override these defaults by using ":highlight" commands
-after sourcing the "syntax.vim" file.
-
 Note that highlight group names are not case sensitive.  "String" and "string"
 can be used for the same group.
 
@@ -414,12 +408,15 @@ There are many types of assembly languages that all use the same file name
 extensions.  Therefore you will have to select the type yourself, or add a
 line in the assembly file that Vim will recognize.  Currently these syntax
 files are included:
-	asm		GNU assembly (the default)
+	asm		GNU assembly (usually have .s or .S extension and were
+			already built using C compiler such as GCC or CLANG)
 	asm68k		Motorola 680x0 assembly
 	asmh8300	Hitachi H-8300 version of GNU assembly
 	ia64		Intel Itanium 64
 	fasm		Flat assembly (https://flatassembler.net)
-	masm		Microsoft assembly (probably works for any 80x86)
+	masm		Microsoft assembly (.masm files are compiled with
+			Microsoft's Macro Assembler. This is only supported
+			for x86, x86_64, ARM and AARCH64 CPU families)
 	nasm		Netwide assembly
 	tasm		Turbo Assembly (with opcodes 80x86 up to Pentium, and
 			MMX)
@@ -590,6 +587,7 @@ Variable		Highlight ~
 *c_no_cformat*		don't highlight %-formats in strings
 *c_no_c99*		don't highlight C99 standard items
 *c_no_c11*		don't highlight C11 standard items
+*c_no_c23*		don't highlight C23 standard items
 *c_no_bsd*		don't highlight BSD specific types
 *c_functions*		highlight function calls and definitions
 *c_function_pointers*	highlight function pointers definitions
@@ -1741,6 +1739,16 @@ To disable numbers having their own color add the following to your vimrc: >
 If you want quotes to have different highlighting than strings >
 	let g:jq_quote_highlight = 1
 
+KCONFIG							*ft-kconfig-syntax*
+
+Kconfig syntax highlighting language.  For syntax syncing, you can configure
+the following variable (default: 50): >
+
+	let kconfig_minlines = 50
+
+To configure a bit more (heavier) highlighting, set the following variable: >
+
+	let kconfig_syntax_heavy = 1
 
 LACE						*lace.vim* *ft-lace-syntax*
 
@@ -1856,13 +1864,9 @@ instead, and the name of your source file should be `*.pike`
 
 LUA						*lua.vim* *ft-lua-syntax*
 
-The Lua syntax file can be used for versions 4.0, 5.0, 5.1 and 5.2 (5.2 is
-the default). You can select one of these versions using the global variables
-lua_version and lua_subversion. For example, to activate Lua
-5.1 syntax highlighting, set the variables like this: >
-
-	:let lua_version = 5
-	:let lua_subversion = 1
+The Lua syntax file can be used for versions 4.0, 5.0+. You can select one of
+these versions using the global variables |g:lua_version| and
+|g:lua_subversion|.
 
 
 MAIL						*mail.vim* *ft-mail.vim*
@@ -4806,16 +4810,20 @@ is mostly used, because it looks better.
 ==============================================================================
 13. Highlight command			*:highlight* *:hi* *E28* *E411* *E415*
 
-There are two types of highlight groups:
-- The built-in |highlight-groups|.
-- The ones used for specific languages.  For these the name starts with the
-  name of the language.  Many of these don't have any attributes, but are
-  linked to a group of the second type.
-							*hitest.vim*
-You can see all the groups currently active with this command: >
-    :so $VIMRUNTIME/syntax/hitest.vim
-This will open a new window containing all highlight group names, displayed
-in their own color.
+Nvim uses a range of highlight groups which fall into two categories: Editor
+interface and syntax highlighting. In rough order of importance, these are
+- basic editor |highlight-groups|
+- standard syntax |group-name|s (in addition, syntax files can define
+  language-specific groups, which are prefixed with the language name)
+- |diagnostic-highlights|
+- |treesitter-highlight-groups|
+- |lsp-semantic-highlight| groups
+- |lsp-highlight| of symbols and references
+
+Where appropriate, highlight groups are linked by default to one of the more basic
+groups, but colorschemes are expected to cover all of them. Under each tag,
+the corresponding highlight groups are highlighted using the current
+colorscheme.
 
 						*:colo* *:colorscheme* *E185*
 :colo[rscheme]		Output the name of the currently active color scheme.
@@ -5159,8 +5167,6 @@ EndOfBuffer	Filler lines (~) after the end of the buffer.
 		By default, this is highlighted like |hl-NonText|.
 							*hl-TermCursor*
 TermCursor	Cursor in a focused terminal.
-							*hl-TermCursorNC*
-TermCursorNC	Cursor in an unfocused terminal.
 							*hl-ErrorMsg*
 ErrorMsg	Error messages on the command line.
 							*hl-WinSeparator*
@@ -5242,6 +5248,8 @@ PmenuMatch	Popup menu: Matched text in normal item. Combined with
 							*hl-PmenuMatchSel*
 PmenuMatchSel	Popup menu: Matched text in selected item. Combined with
 		|hl-PmenuMatch| and |hl-PmenuSel|.
+							*hl-ComplMatchIns*
+ComplMatchIns	Matched text of the currently inserted completion.
 							*hl-Question*
 Question	|hit-enter| prompt and yes/no questions.
 							*hl-QuickFixLine*

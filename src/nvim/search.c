@@ -30,10 +30,10 @@
 #include "nvim/fileio.h"
 #include "nvim/fold.h"
 #include "nvim/garray.h"
+#include "nvim/garray_defs.h"
 #include "nvim/getchar.h"
 #include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
-#include "nvim/highlight.h"
 #include "nvim/highlight_defs.h"
 #include "nvim/indent_c.h"
 #include "nvim/insexpand.h"
@@ -41,7 +41,6 @@
 #include "nvim/mark.h"
 #include "nvim/mark_defs.h"
 #include "nvim/mbyte.h"
-#include "nvim/mbyte_defs.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
@@ -2705,6 +2704,7 @@ static void update_search_stat(int dirc, pos_T *pos, pos_T *cursor_pos, searchst
   static int last_maxcount = SEARCH_STAT_DEF_MAX_COUNT;
   static int chgtick = 0;
   static char *lastpat = NULL;
+  static size_t lastpatlen = 0;
   static buf_T *lbuf = NULL;
 
   CLEAR_POINTER(stat);
@@ -2726,9 +2726,9 @@ static void update_search_stat(int dirc, pos_T *pos, pos_T *cursor_pos, searchst
   // Unfortunately, there is no STRNICMP function.
   // XXX: above comment should be "no MB_STRCMP function" ?
   if (!(chgtick == buf_get_changedtick(curbuf)
-        && lastpat != NULL  // suppress clang/NULL passed as nonnull parameter
-        && STRNICMP(lastpat, spats[last_idx].pat, strlen(lastpat)) == 0
-        && strlen(lastpat) == strlen(spats[last_idx].pat)
+        && (lastpat != NULL  // suppress clang/NULL passed as nonnull parameter
+            && mb_strnicmp(lastpat, spats[last_idx].pat, lastpatlen) == 0
+            && lastpatlen == spats[last_idx].patlen)
         && equalpos(lastpos, *cursor_pos)
         && lbuf == curbuf)
       || wraparound || cur < 0 || (maxcount > 0 && cur > maxcount)
@@ -2781,7 +2781,8 @@ static void update_search_stat(int dirc, pos_T *pos, pos_T *cursor_pos, searchst
     }
     if (done_search) {
       xfree(lastpat);
-      lastpat = xstrdup(spats[last_idx].pat);
+      lastpat = xstrnsave(spats[last_idx].pat, spats[last_idx].patlen);
+      lastpatlen = spats[last_idx].patlen;
       chgtick = (int)buf_get_changedtick(curbuf);
       lbuf = curbuf;
       lastpos = p;
@@ -2974,6 +2975,10 @@ typedef struct {
 #define CAMEL_BONUS 30
 /// bonus if the first letter is matched
 #define FIRST_LETTER_BONUS 15
+/// bonus if exact match
+#define EXACT_MATCH_BONUS 100
+/// bonus if case match when no ignorecase
+#define CASE_MATCH_BONUS 25
 /// penalty applied for every letter in str before the first match
 #define LEADING_LETTER_PENALTY (-5)
 /// maximum penalty for leading letters
@@ -2989,11 +2994,21 @@ typedef struct {
 
 /// Compute a score for a fuzzy matched string. The matching character locations
 /// are in "matches".
-static int fuzzy_match_compute_score(const char *const str, const int strSz,
-                                     const uint32_t *const matches, const int numMatches)
+static int fuzzy_match_compute_score(const char *const fuzpat, const char *const str,
+                                     const int strSz, const uint32_t *const matches,
+                                     const int numMatches)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_PURE
 {
   assert(numMatches > 0);  // suppress clang "result of operation is garbage"
+  const char *p = str;
+  uint32_t sidx = 0;
+  bool is_exact_match = true;
+  const char *const orig_fuzpat = fuzpat - numMatches;
+  const char *curpat = orig_fuzpat;
+  int pat_idx = 0;
+  // Track consecutive camel case matches
+  int consecutive_camel = 0;
+
   // Initialize score
   int score = 100;
 
@@ -3011,6 +3026,7 @@ static int fuzzy_match_compute_score(const char *const str, const int strSz,
   // Apply ordering bonuses
   for (int i = 0; i < numMatches; i++) {
     const uint32_t currIdx = matches[i];
+    bool is_camel = false;
 
     if (i > 0) {
       const uint32_t prevIdx = matches[i - 1];
@@ -3020,23 +3036,35 @@ static int fuzzy_match_compute_score(const char *const str, const int strSz,
         score += SEQUENTIAL_BONUS;
       } else {
         score += GAP_PENALTY * (int)(currIdx - prevIdx);
+        // Reset consecutive camel count on gap
+        consecutive_camel = 0;
       }
     }
 
+    int curr;
     // Check for bonuses based on neighbor character value
     if (currIdx > 0) {
       // Camel case
-      const char *p = str;
       int neighbor = ' ';
 
-      for (uint32_t sidx = 0; sidx < currIdx; sidx++) {
+      while (sidx < currIdx) {
         neighbor = utf_ptr2char(p);
         MB_PTR_ADV(p);
+        sidx++;
       }
-      const int curr = utf_ptr2char(p);
+      curr = utf_ptr2char(p);
 
+      // Enhanced camel case scoring
       if (mb_islower(neighbor) && mb_isupper(curr)) {
-        score += CAMEL_BONUS;
+        score += CAMEL_BONUS * 2;  // Double the camel case bonus
+        is_camel = true;
+        consecutive_camel++;
+        // Additional bonus for consecutive camel
+        if (consecutive_camel > 1) {
+          score += CAMEL_BONUS;
+        }
+      } else {
+        consecutive_camel = 0;
       }
 
       // Bonus if the match follows a separator character
@@ -3048,8 +3076,36 @@ static int fuzzy_match_compute_score(const char *const str, const int strSz,
     } else {
       // First letter
       score += FIRST_LETTER_BONUS;
+      curr = utf_ptr2char(p);
+    }
+
+    // Case matching bonus
+    if (mb_isalpha(curr)) {
+      while (pat_idx < i && *curpat) {
+        MB_PTR_ADV(curpat);
+        pat_idx++;
+      }
+
+      if (curr == utf_ptr2char(curpat)) {
+        score += CASE_MATCH_BONUS;
+        // Extra bonus for exact case match in camel
+        if (is_camel) {
+          score += CASE_MATCH_BONUS / 2;
+        }
+      }
+    }
+
+    // Check exact match condition
+    if (currIdx != (uint32_t)i) {
+      is_exact_match = false;
     }
   }
+
+  // Boost score for exact matches
+  if (is_exact_match && numMatches == strSz) {
+    score += EXACT_MATCH_BONUS;
+  }
+
   return score;
 }
 
@@ -3128,7 +3184,7 @@ static int fuzzy_match_recursive(const char *fuzpat, const char *str, uint32_t s
 
   // Calculate score
   if (matched) {
-    *outScore = fuzzy_match_compute_score(strBegin, strLen, matches, nextMatch);
+    *outScore = fuzzy_match_compute_score(fuzpat, strBegin, strLen, matches, nextMatch);
   }
 
   // Return best result

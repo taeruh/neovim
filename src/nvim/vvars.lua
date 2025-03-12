@@ -10,6 +10,7 @@ M.vars = {
     ]=],
   },
   char = {
+    type = 'string',
     desc = [=[
       Argument for evaluating 'formatexpr' and used for the typed
       character when using <expr> in an abbreviation |:map-<expr>|.
@@ -63,6 +64,7 @@ M.vars = {
     ]=],
   },
   completed_item = {
+    type = 'vim.v.completed_item',
     desc = [=[
       Dictionary containing the |complete-items| for the most
       recently completed word after |CompleteDone|.  Empty if the
@@ -94,6 +96,7 @@ M.vars = {
     ]=],
   },
   ctype = {
+    type = 'string',
     desc = [=[
       The current locale setting for characters of the runtime
       environment.  This allows Vim scripts to be aware of the
@@ -158,6 +161,7 @@ M.vars = {
     ]=],
   },
   event = {
+    type = 'vim.v.event',
     desc = [=[
       Dictionary of event data for the current |autocommand|.  Valid
       only during the event lifetime; storing or passing v:event is
@@ -208,13 +212,17 @@ M.vars = {
                          changing window  (or tab) on |DirChanged|.
         status           Job status or exit code, -1 means "unknown". |TermClose|
         reason           Reason for completion being done. |CompleteDone|
+        complete_word    The word that was selected, empty if abandoned complete.
+        complete_type    See |complete_info_mode|
+        windows          List of window IDs that changed on |WinResized|
     ]=],
   },
   exception = {
     type = 'string',
     desc = [=[
       The value of the exception most recently caught and not
-      finished.  See also |v:throwpoint| and |throw-variables|.
+      finished.  See also |v:stacktrace|, |v:throwpoint|, and
+      |throw-variables|.
       Example: >vim
         try
           throw "oops"
@@ -236,6 +244,7 @@ M.vars = {
     ]=],
   },
   exiting = {
+    type = 'integer?',
     desc = [=[
       Exit code, or |v:null| before invoking the |VimLeavePre|
       and |VimLeave| autocmds.  See |:q|, |:x| and |:cquit|.
@@ -468,6 +477,7 @@ M.vars = {
     ]=],
   },
   msgpack_types = {
+    type = 'table',
     desc = [=[
       Dictionary containing msgpack types used by |msgpackparse()|
       and |msgpackdump()|. All types inside dictionary are fixed
@@ -633,6 +643,7 @@ M.vars = {
     ]=],
   },
   scrollstart = {
+    type = 'string',
     desc = [=[
       String describing the script or function that caused the
       screen to scroll up.  It's only set when it is empty, thus the
@@ -690,6 +701,15 @@ M.vars = {
           echo 'could not rename "foo" to "bar"!'
         endif
       <
+    ]=],
+  },
+  stacktrace = {
+    type = 'table[]',
+    desc = [=[
+      The stack trace of the exception most recently caught and
+      not finished.  Refer to |getstacktrace()| for the structure of
+      stack trace.  See also |v:exception|, |v:throwpoint|, and
+      |throw-variables|.
     ]=],
   },
   statusmsg = {
@@ -780,7 +800,7 @@ M.vars = {
   termrequest = {
     type = 'string',
     desc = [=[
-      The value of the most recent OSC or DCS control sequence
+      The value of the most recent OSC, DCS or APC control sequence
       sent from a process running in the embedded |terminal|.
       This can be read in a |TermRequest| event handler to respond
       to queries from embedded applications.
@@ -796,11 +816,13 @@ M.vars = {
     ]=],
   },
   testing = {
+    type = 'integer',
     desc = [=[
       Must be set before using `test_garbagecollect_now()`.
     ]=],
   },
   this_session = {
+    type = 'string',
     desc = [=[
       Full filename of the last loaded or saved session file.
       Empty when no session file has been saved.  See |:mksession|.
@@ -808,10 +830,11 @@ M.vars = {
     ]=],
   },
   throwpoint = {
+    type = 'string',
     desc = [=[
       The point where the exception most recently caught and not
       finished was thrown.  Not set when commands are typed.  See
-      also |v:exception| and |throw-variables|.
+      also |v:exception|, |v:stacktrace|, and |throw-variables|.
       Example: >vim
         try
           throw "oops"

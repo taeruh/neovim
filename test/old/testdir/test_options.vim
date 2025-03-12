@@ -504,7 +504,8 @@ func Test_set_completion_string_values()
     call assert_equal('current', getcompletion('set browsedir=', 'cmdline')[1])
   endif
   call assert_equal('unload', getcompletion('set bufhidden=', 'cmdline')[1])
-  call assert_equal('nowrite', getcompletion('set buftype=', 'cmdline')[1])
+  "call assert_equal('nowrite', getcompletion('set buftype=', 'cmdline')[1])
+  call assert_equal('help', getcompletion('set buftype=', 'cmdline')[1])
   call assert_equal('internal', getcompletion('set casemap=', 'cmdline')[1])
   if exists('+clipboard')
     " call assert_match('unnamed', getcompletion('set clipboard=', 'cmdline')[1])
@@ -588,6 +589,7 @@ func Test_set_completion_string_values()
 
   " Other string options that queries the system rather than fixed enum names
   call assert_equal(['all', 'BufAdd'], getcompletion('set eventignore=', 'cmdline')[0:1])
+  call assert_equal(['WinLeave', 'WinResized', 'WinScrolled'], getcompletion('set eiw=', 'cmdline')[-3:-1])
   call assert_equal('latin1', getcompletion('set fileencodings=', 'cmdline')[1])
   " call assert_equal('top', getcompletion('set printoptions=', 'cmdline')[0])
   " call assert_equal('SpecialKey', getcompletion('set wincolor=', 'cmdline')[0])
@@ -643,6 +645,10 @@ func Test_set_completion_string_values()
   " Test completion in middle of the line
   " call feedkeys(":set hl=8b i\<Left>\<Left>\<Tab>\<C-B>\"\<CR>", 'xt')
   " call assert_equal("\"set hl=8bi i", @:)
+
+  " messagesopt
+  call assert_equal(['history:', 'hit-enter', 'wait:'],
+        \ getcompletion('set messagesopt+=', 'cmdline')->sort())
 
   "
   " Test flag lists
@@ -706,6 +712,10 @@ func Test_set_completion_string_values()
   " Test empty option
   set diffopt=
   call assert_equal([], getcompletion('set diffopt-=', 'cmdline'))
+  " Test all possible values
+  call assert_equal(['filler', 'context:', 'iblank', 'icase', 'iwhite', 'iwhiteall', 'iwhiteeol', 'horizontal',
+        \ 'vertical', 'closeoff', 'hiddenoff', 'foldcolumn:', 'followwrap', 'internal', 'indent-heuristic', 'algorithm:', 'linematch:'],
+        \ getcompletion('set diffopt=', 'cmdline'))
   set diffopt&
 
   " Test escaping output
@@ -743,7 +753,6 @@ func Test_set_option_errors()
   call assert_fails('set backupcopy=', 'E474:')
   call assert_fails('set regexpengine=3', 'E474:')
   call assert_fails('set history=10001', 'E474:')
-  call assert_fails('set msghistory=10001', 'E474:')
   call assert_fails('set numberwidth=21', 'E474:')
   call assert_fails('set colorcolumn=-a', 'E474:')
   call assert_fails('set colorcolumn=a', 'E474:')
@@ -757,7 +766,6 @@ func Test_set_option_errors()
   endif
   call assert_fails('set helpheight=-1', 'E487:')
   call assert_fails('set history=-1', 'E487:')
-  call assert_fails('set msghistory=-1', 'E487:')
   call assert_fails('set report=-1', 'E487:')
   call assert_fails('set shiftwidth=-1', 'E487:')
   call assert_fails('set sidescroll=-1', 'E487:')
@@ -2499,6 +2507,7 @@ func Test_string_option_revert_on_failure()
         \ ['eadirection', 'hor', 'a123'],
         \ ['encoding', 'utf-8', 'a123'],
         \ ['eventignore', 'TextYankPost', 'a123'],
+        \ ['eventignorewin', 'WinScrolled', 'a123'],
         \ ['fileencoding', 'utf-8', 'a123,'],
         \ ['fileformat', 'mac', 'a123'],
         \ ['fileformats', 'mac', 'a123'],
@@ -2517,6 +2526,7 @@ func Test_string_option_revert_on_failure()
         \ ['lispoptions', 'expr:1', 'a123'],
         \ ['listchars', 'tab:->', 'tab:'],
         \ ['matchpairs', '<:>', '<:'],
+        \ ['messagesopt', 'hit-enter,history:100', 'a123'],
         \ ['mkspellmem', '100000,1000,100', '100000'],
         \ ['mouse', 'nvi', 'z'],
         \ ['mousemodel', 'extend', 'a123'],

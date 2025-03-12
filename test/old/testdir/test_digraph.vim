@@ -40,6 +40,9 @@ func Test_digraphs()
   " Quadruple prime
   call Put_Dig("'4")
   call assert_equal("⁗", getline('.'))
+  " APPROACHES THE LIMIT
+  call Put_Dig(".=")
+  call assert_equal("≐", getline('.'))
   " Not a digraph
   call Put_Dig("a\<bs>")
   call Put_Dig("\<bs>a")
@@ -607,8 +610,10 @@ func Test_digraph_getlist_function()
   " of digraphs returned.
   call assert_equal(digraph_getlist()->len(), digraph_getlist(0)->len())
   call assert_notequal(digraph_getlist()->len(), digraph_getlist(1)->len())
+  call assert_equal(digraph_getlist()->len(), digraph_getlist(v:false)->len())
+  call assert_notequal(digraph_getlist()->len(), digraph_getlist(v:true)->len())
 
-  call assert_fails('call digraph_getlist(0z12)', 'E974: Using a Blob as a Number')
+  call assert_fails('call digraph_getlist(0z12)', 'E1212: Bool required for argument 1')
 endfunc
 
 
