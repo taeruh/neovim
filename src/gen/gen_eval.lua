@@ -1,10 +1,9 @@
 local mpack = vim.mpack
 
-local autodir = arg[1]
+local funcsfname = arg[1]
 local metadata_file = arg[2]
 local funcs_file = arg[3]
-
-local funcsfname = autodir .. '/funcs.generated.h'
+local eval_file = arg[4]
 
 --Will generate funcs.generated.h with definition of functions static const array.
 
@@ -16,6 +15,7 @@ hashpipe:write([[
 #include "nvim/arglist.h"
 #include "nvim/cmdexpand.h"
 #include "nvim/cmdhist.h"
+#include "nvim/diff.h"
 #include "nvim/digraph.h"
 #include "nvim/eval.h"
 #include "nvim/eval/buffer.h"
@@ -47,7 +47,7 @@ hashpipe:write([[
 
 ]])
 
-local funcs = require('nvim.eval').funcs
+local funcs = loadfile(eval_file)().funcs
 for _, func in pairs(funcs) do
   if func.float_func then
     func.func = 'float_op_wrapper'

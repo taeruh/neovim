@@ -15,6 +15,8 @@
 #include <tree_sitter/api.h>
 #include <uv.h>
 
+#include "nvim/os/time.h"
+
 #ifdef HAVE_WASMTIME
 # include <wasm.h>
 
@@ -52,6 +54,11 @@ typedef struct {
   TSTree *tree;
 } TSLuaTree;
 
+typedef struct {
+  uint64_t parse_start_time;
+  uint64_t timeout_threshold_ns;
+} TSLuaParserCallbackPayload;
+
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "lua/treesitter.c.generated.h"
 #endif
@@ -65,7 +72,7 @@ static TSWasmStore *ts_wasmstore;
 
 // TSLanguage
 
-int tslua_has_language(lua_State *L)
+static int tslua_has_language(lua_State *L)
 {
   const char *lang_name = luaL_checkstring(L, 1);
   lua_pushboolean(L, map_has(cstr_t, &langs, lang_name));
@@ -110,15 +117,17 @@ static const char *wasmerr_to_str(TSWasmErrorKind werr)
 }
 #endif
 
-int tslua_add_language_from_wasm(lua_State *L)
+#ifdef HAVE_WASMTIME
+static int tslua_add_language_from_wasm(lua_State *L)
 {
   return add_language(L, true);
 }
+#endif
 
 // Creates the language into the internal language map.
 //
 // Returns true if the language is correctly loaded in the language map
-int tslua_add_language_from_object(lua_State *L)
+static int tslua_add_language_from_object(lua_State *L)
 {
   return add_language(L, false);
 }
@@ -171,7 +180,7 @@ static const TSLanguage *load_language_from_wasm(lua_State *L, const char *path,
   }
 
   if (werr.kind > 0) {
-    luaL_error(L, "Error creating wasm store: (%s) %s", wasmerr_to_str(werr.kind), werr.message);
+    luaL_error(L, "Failed to create WASM store: (%s) %s", wasmerr_to_str(werr.kind), werr.message);
   }
 
   size_t file_size = 0;
@@ -234,7 +243,7 @@ static int add_language(lua_State *L, bool is_wasm)
   return 1;
 }
 
-int tslua_remove_lang(lua_State *L)
+static int tslua_remove_lang(lua_State *L)
 {
   const char *lang_name = luaL_checkstring(L, 1);
   bool present = map_has(cstr_t, &langs, lang_name);
@@ -257,7 +266,7 @@ static TSLanguage *lang_check(lua_State *L, int index)
   return lang;
 }
 
-int tslua_inspect_lang(lua_State *L)
+static int tslua_inspect_lang(lua_State *L)
 {
   TSLanguage *lang = lang_check(L, 1);
 
@@ -362,14 +371,12 @@ static struct luaL_Reg parser_meta[] = {
   { "reset", parser_reset },
   { "set_included_ranges", parser_set_ranges },
   { "included_ranges", parser_get_ranges },
-  { "set_timeout", parser_set_timeout },
-  { "timeout", parser_get_timeout },
   { "_set_logger", parser_set_logger },
   { "_logger", parser_get_logger },
   { NULL, NULL }
 };
 
-int tslua_push_parser(lua_State *L)
+static int tslua_push_parser(lua_State *L)
 {
   TSLanguage *lang = lang_check(L, 1);
 
@@ -487,6 +494,13 @@ static void push_ranges(lua_State *L, const TSRange *ranges, const size_t length
   }
 }
 
+static bool on_parser_progress(TSParseState *state)
+{
+  TSLuaParserCallbackPayload *payload = state->payload;
+  uint64_t parse_time = os_hrtime() - payload->parse_start_time;
+  return parse_time >= payload->timeout_threshold_ns;
+}
+
 static int parser_parse(lua_State *L)
 {
   TSParser *p = parser_check(L, 1);
@@ -524,7 +538,17 @@ static int parser_parse(lua_State *L)
     }
 
     input = (TSInput){ (void *)buf, input_cb, TSInputEncodingUTF8, NULL };
-    new_tree = ts_parser_parse(p, old_tree, input);
+    if (!lua_isnil(L, 5)) {
+      uint64_t timeout_ns = (uint64_t)lua_tointeger(L, 5);
+      TSLuaParserCallbackPayload payload =
+        (TSLuaParserCallbackPayload){ .parse_start_time = os_hrtime(),
+                                      .timeout_threshold_ns = timeout_ns };
+      TSParseOptions parse_options = { .payload = &payload,
+                                       .progress_callback = on_parser_progress };
+      new_tree = ts_parser_parse_with_options(p, old_tree, input, parse_options);
+    } else {
+      new_tree = ts_parser_parse(p, old_tree, input);
+    }
 
     break;
 
@@ -534,12 +558,11 @@ static int parser_parse(lua_State *L)
 
   bool include_bytes = (lua_gettop(L) >= 4) && lua_toboolean(L, 4);
 
-  // Sometimes parsing fails (timeout, or wrong parser ABI)
-  // In those case, just return an error.
   if (!new_tree) {
-    if (ts_parser_timeout_micros(p) == 0) {
-      // No timeout set, must have had an error
-      return luaL_error(L, "An error occurred when parsing.");
+    // Sometimes parsing fails (no language was set, or it was set to one with an incompatible ABI)
+    // In those cases, just return an error.
+    if (!ts_parser_language(p)) {
+      return luaL_error(L, "Language was unset, or has an incompatible ABI.");
     }
     return 0;
   }
@@ -670,26 +693,6 @@ static int parser_get_ranges(lua_State *L)
   return 1;
 }
 
-static int parser_set_timeout(lua_State *L)
-{
-  TSParser *p = parser_check(L, 1);
-
-  if (lua_gettop(L) < 2) {
-    luaL_error(L, "integer expected");
-  }
-
-  uint32_t timeout = (uint32_t)luaL_checkinteger(L, 2);
-  ts_parser_set_timeout_micros(p, timeout);
-  return 0;
-}
-
-static int parser_get_timeout(lua_State *L)
-{
-  TSParser *p = parser_check(L, 1);
-  lua_pushinteger(L, (lua_Integer)ts_parser_timeout_micros(p));
-  return 1;
-}
-
 static void logger_cb(void *payload, TSLogType logtype, const char *s)
 {
   TSLuaLoggerOpts *opts = (TSLuaLoggerOpts *)payload;
@@ -704,7 +707,7 @@ static void logger_cb(void *payload, TSLogType logtype, const char *s)
   lua_pushstring(lstate, logtype == TSLogTypeParse ? "parse" : "lex");
   lua_pushstring(lstate, s);
   if (lua_pcall(lstate, 2, 0, 0)) {
-    luaL_error(lstate, "Error executing treesitter logger callback");
+    luaL_error(lstate, "treesitter logger callback failed");
   }
 }
 
@@ -1336,7 +1339,7 @@ static struct luaL_Reg querycursor_meta[] = {
   { NULL, NULL }
 };
 
-int tslua_push_querycursor(lua_State *L)
+static int tslua_push_querycursor(lua_State *L)
 {
   TSNode node = node_check(L, 1);
 
@@ -1496,7 +1499,7 @@ static struct luaL_Reg query_meta[] = {
   { NULL, NULL }
 };
 
-int tslua_parse_query(lua_State *L)
+static int tslua_parse_query(lua_State *L)
 {
   if (lua_gettop(L) < 2 || !lua_isstring(L, 1) || !lua_isstring(L, 2)) {
     return luaL_error(L, "string expected");
@@ -1724,7 +1727,7 @@ static void build_meta(lua_State *L, const char *tname, const luaL_Reg *meta)
 /// Init the tslua library.
 ///
 /// All global state is stored in the registry of the lua_State.
-void tslua_init(lua_State *L)
+static void tslua_init(lua_State *L)
 {
   // type metatables
   build_meta(L, TS_META_PARSER, parser_meta);
@@ -1737,7 +1740,19 @@ void tslua_init(lua_State *L)
   ts_set_allocator(xmalloc, xcalloc, xrealloc, xfree);
 }
 
-void tslua_free(void)
+static int tslua_get_language_version(lua_State *L)
+{
+  lua_pushnumber(L, TREE_SITTER_LANGUAGE_VERSION);
+  return 1;
+}
+
+static int tslua_get_minimum_language_version(lua_State *L)
+{
+  lua_pushnumber(L, TREE_SITTER_MIN_COMPATIBLE_LANGUAGE_VERSION);
+  return 1;
+}
+
+void nlua_treesitter_free(void)
 {
 #ifdef HAVE_WASMTIME
   if (wasmengine != NULL) {
@@ -1747,4 +1762,41 @@ void tslua_free(void)
     ts_wasm_store_delete(ts_wasmstore);
   }
 #endif
+}
+
+void nlua_treesitter_init(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
+{
+  tslua_init(lstate);
+
+  lua_pushcfunction(lstate, tslua_push_parser);
+  lua_setfield(lstate, -2, "_create_ts_parser");
+
+  lua_pushcfunction(lstate, tslua_push_querycursor);
+  lua_setfield(lstate, -2, "_create_ts_querycursor");
+
+  lua_pushcfunction(lstate, tslua_add_language_from_object);
+  lua_setfield(lstate, -2, "_ts_add_language_from_object");
+
+#ifdef HAVE_WASMTIME
+  lua_pushcfunction(lstate, tslua_add_language_from_wasm);
+  lua_setfield(lstate, -2, "_ts_add_language_from_wasm");
+#endif
+
+  lua_pushcfunction(lstate, tslua_has_language);
+  lua_setfield(lstate, -2, "_ts_has_language");
+
+  lua_pushcfunction(lstate, tslua_remove_lang);
+  lua_setfield(lstate, -2, "_ts_remove_language");
+
+  lua_pushcfunction(lstate, tslua_inspect_lang);
+  lua_setfield(lstate, -2, "_ts_inspect_language");
+
+  lua_pushcfunction(lstate, tslua_parse_query);
+  lua_setfield(lstate, -2, "_ts_parse_query");
+
+  lua_pushcfunction(lstate, tslua_get_language_version);
+  lua_setfield(lstate, -2, "_ts_get_language_version");
+
+  lua_pushcfunction(lstate, tslua_get_minimum_language_version);
+  lua_setfield(lstate, -2, "_ts_get_minimum_language_version");
 }

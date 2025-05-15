@@ -953,11 +953,13 @@ function Screen:_handle_grid_resize(grid, width, height)
   }
 end
 
-function Screen:_handle_msg_set_pos(grid, row, scrolled, char)
+function Screen:_handle_msg_set_pos(grid, row, scrolled, char, zindex, compindex)
   self.msg_grid = grid
   self.msg_grid_pos = row
   self.msg_scrolled = scrolled
   self.msg_sep_char = char
+  self.msg_zindex = zindex
+  self.msg_compindex = compindex
 end
 
 function Screen:_handle_flush() end
@@ -973,6 +975,10 @@ function Screen:_reset()
   self.wildmenu_items = nil
   self.wildmenu_pos = nil
   self._grid_win_extmarks = {}
+  self.msg_grid = nil
+  self.msg_grid_pos = nil
+  self.msg_scrolled = false
+  self.msg_sep_char = nil
 end
 
 --- @param cursor_style_enabled boolean
@@ -1224,12 +1230,13 @@ end
 --- @param row integer
 --- @param col integer
 --- @param items integer[][]
-function Screen:_handle_grid_line(grid, row, col, items)
+function Screen:_handle_grid_line(grid, row, col, items, wrap)
   assert(self._options.ext_linegrid)
   assert(#items > 0)
   local line = self._grids[grid].rows[row + 1]
   local colpos = col + 1
   local hl_id = 0
+  line.wrap = wrap
   for _, item in ipairs(items) do
     local text, hl_id_cell, count = item[1], item[2], item[3]
     if hl_id_cell ~= nil then

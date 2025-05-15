@@ -345,6 +345,8 @@ local extension = {
   tcc = 'cpp',
   hxx = 'cpp',
   hpp = 'cpp',
+  ixx = 'cpp',
+  mpp = 'cpp',
   ccm = 'cpp',
   cppm = 'cpp',
   cxxm = 'cpp',
@@ -380,6 +382,7 @@ local extension = {
   dat = detect.dat,
   Dat = detect.dat,
   DAT = detect.dat,
+  dax = 'dax',
   dcd = 'dcd',
   decl = detect.decl,
   dec = detect.decl,
@@ -761,6 +764,7 @@ local extension = {
   dm3 = 'maxima',
   dmt = 'maxima',
   wxm = 'maxima',
+  mbsyncrc = 'mbsync',
   mw = 'mediawiki',
   wiki = 'mediawiki',
   mel = 'mel',
@@ -831,6 +835,7 @@ local extension = {
   nix = 'nix',
   norg = 'norg',
   nqc = 'nqc',
+  ['0'] = detect.nroff,
   ['1'] = detect.nroff,
   ['2'] = detect.nroff,
   ['3'] = detect.nroff,
@@ -840,6 +845,23 @@ local extension = {
   ['7'] = detect.nroff,
   ['8'] = detect.nroff,
   ['9'] = detect.nroff,
+  ['0p'] = detect.nroff,
+  ['1p'] = detect.nroff,
+  ['3p'] = detect.nroff,
+  ['1x'] = detect.nroff,
+  ['2x'] = detect.nroff,
+  ['3x'] = detect.nroff,
+  ['4x'] = detect.nroff,
+  ['5x'] = detect.nroff,
+  ['6x'] = detect.nroff,
+  ['7x'] = detect.nroff,
+  ['8x'] = detect.nroff,
+  ['3am'] = detect.nroff,
+  ['3perl'] = detect.nroff,
+  ['3pm'] = detect.nroff,
+  ['3posix'] = detect.nroff,
+  ['3type'] = detect.nroff,
+  n = detect.nroff,
   roff = 'nroff',
   tmac = 'nroff',
   man = 'nroff',
@@ -952,6 +974,7 @@ local extension = {
   ppd = 'ppd',
   it = 'ppwiz',
   ih = 'ppwiz',
+  pq = 'pq',
   action = 'privoxy',
   prg = detect.prg,
   Prg = detect.prg,
@@ -980,6 +1003,7 @@ local extension = {
   py = 'python',
   pyi = 'python',
   ptl = 'python',
+  ipy = 'python',
   ql = 'ql',
   qll = 'ql',
   qml = 'qml',
@@ -1366,6 +1390,7 @@ local extension = {
   yaml = 'yaml',
   eyaml = 'yaml',
   mplstyle = 'yaml',
+  grc = detect_line1('<%?xml', 'xml', 'yaml'),
   yang = 'yang',
   yuck = 'yuck',
   z8a = 'z8a',
@@ -1500,7 +1525,6 @@ local filename = {
   ['.chktexrc'] = 'conf',
   ['.ripgreprc'] = 'conf',
   ripgreprc = 'conf',
-  ['.mbsyncrc'] = 'conf',
   ['configure.in'] = 'config',
   ['configure.ac'] = 'config',
   crontab = 'crontab',
@@ -1544,6 +1568,10 @@ local filename = {
   ['nfs.conf'] = 'dosini',
   ['nfsmount.conf'] = 'dosini',
   ['.notmuch-config'] = 'dosini',
+  ['.alsoftrc'] = 'dosini',
+  ['alsoft.conf'] = 'dosini',
+  ['alsoft.ini'] = 'dosini',
+  ['alsoftrc.sample'] = 'dosini',
   ['pacman.conf'] = 'confini',
   ['paru.conf'] = 'confini',
   ['mpv.conf'] = 'confini',
@@ -1583,6 +1611,7 @@ local filename = {
   ['.gitattributes'] = 'gitattributes',
   ['.gitignore'] = 'gitignore',
   ['.ignore'] = 'gitignore',
+  ['.containerignore'] = 'gitignore',
   ['.dockerignore'] = 'gitignore',
   ['.fdignore'] = 'gitignore',
   ['.npmignore'] = 'gitignore',
@@ -1702,6 +1731,7 @@ local filename = {
   ['/etc/man.conf'] = 'manconf',
   ['man.config'] = 'manconf',
   ['maxima-init.mac'] = 'maxima',
+  isyncrc = 'mbsync',
   ['meson.build'] = 'meson',
   ['meson.options'] = 'meson',
   ['meson_options.txt'] = 'meson',
@@ -1727,7 +1757,6 @@ local filename = {
   ['.ondirrc'] = 'ondir',
   opam = 'opam',
   ['opam.locked'] = 'opam',
-  ['pacman.log'] = 'pacmanlog',
   ['/etc/pam.conf'] = 'pamconf',
   ['pam_env.conf'] = 'pamenv',
   ['.pam_environment'] = 'pamenv',
@@ -1864,11 +1893,12 @@ local filename = {
   tidyrc = 'tidy',
   ['.tidyrc'] = 'tidy',
   ['.tmux.conf'] = 'tmux',
+  ['Cargo.lock'] = 'toml',
   ['/.cargo/config'] = 'toml',
+  ['/.cargo/credentials'] = 'toml',
   Pipfile = 'toml',
   ['Gopkg.lock'] = 'toml',
-  ['/.cargo/credentials'] = 'toml',
-  ['Cargo.lock'] = 'toml',
+  ['uv.lock'] = 'toml',
   ['.black'] = 'toml',
   black = detect_line1('tool%.black', 'toml', nil),
   ['trustees.conf'] = 'trustees',
@@ -2251,6 +2281,8 @@ local pattern = {
     ['asterisk/.*%.conf'] = starsetf('asterisk'),
     ['asterisk.*/.*voicemail%.conf'] = starsetf('asteriskvm'),
     ['^dictd.*%.conf$'] = 'dictdconf',
+    ['/%.?gnuradio/.*%.conf$'] = 'confini',
+    ['/gnuradio/conf%.d/.*%.conf$'] = 'confini',
     ['/lxqt/.*%.conf$'] = 'dosini',
     ['/screengrab/.*%.conf$'] = 'dosini',
     ['/%.config/fd/ignore$'] = 'gitignore',
@@ -2261,9 +2293,17 @@ local pattern = {
     ['^named.*%.conf$'] = 'named',
     ['^rndc.*%.conf$'] = 'named',
     ['/openvpn/.*/.*%.conf$'] = 'openvpn',
+    ['/pipewire/.*%.conf$'] = 'spajson',
+    ['/wireplumber/.*%.conf$'] = 'spajson',
     ['/%.ssh/.*%.conf$'] = 'sshconfig',
     ['^%.?tmux.*%.conf$'] = 'tmux',
     ['^%.?tmux.*%.conf'] = { 'tmux', { priority = -1 } },
+    ['/containers/containers%.conf$'] = 'toml',
+    ['/containers/containers%.conf%.d/.*%.conf$'] = 'toml',
+    ['/containers/containers%.conf%.modules/.*%.conf$'] = 'toml',
+    ['/containers/registries%.conf$'] = 'toml',
+    ['/containers/registries%.conf%.d/.*%.conf$'] = 'toml',
+    ['/containers/storage%.conf$'] = 'toml',
     ['/%.config/upstart/.*%.conf$'] = 'upstart',
     ['/%.config/upstart/.*%.override$'] = 'upstart',
     ['/%.init/.*%.conf$'] = 'upstart',
@@ -2278,7 +2318,7 @@ local pattern = {
     ['^Containerfile%.'] = starsetf('dockerfile'),
     ['^Dockerfile%.'] = starsetf('dockerfile'),
     ['[mM]akefile$'] = detect.make,
-    ['^[mM]akefile'] = starsetf('make'),
+    ['^[mM]akefile'] = starsetf(detect.make),
     ['^[rR]akefile'] = starsetf('ruby'),
     ['^%.profile'] = detect.sh,
   },
@@ -2417,8 +2457,26 @@ local pattern = {
     ['^%.?gtkrc'] = starsetf('gtkrc'),
     ['/doc/.*%.txt$'] = function(_, bufnr)
       local line = M._getline(bufnr, -1)
-      local ml = line:find('^vim:') or line:find('%svim:')
-      if ml and M._matchregex(line:sub(ml), [[\<\(ft\|filetype\)=help\>]]) then
+      if
+        M._findany(line, {
+          '^vim:ft=help[:%s]',
+          '^vim:ft=help$',
+          '^vim:filetype=help[:%s]',
+          '^vim:filetype=help$',
+          '^vim:.*[:%s]ft=help[:%s]',
+          '^vim:.*[:%s]ft=help$',
+          '^vim:.*[:%s]filetype=help[:%s]',
+          '^vim:.*[:%s]filetype=help$',
+          '%svim:ft=help[:%s]',
+          '%svim:ft=help$',
+          '%svim:filetype=help[:%s]',
+          '%svim:filetype=help$',
+          '%svim:.*[:%s]ft=help[:%s]',
+          '%svim:.*[:%s]ft=help$',
+          '%svim:.*[:%s]filetype=help[:%s]',
+          '%svim:.*[:%s]filetype=help$',
+        })
+      then
         return 'help'
       end
     end,
@@ -2450,6 +2508,9 @@ local pattern = {
     ['/octave/history$'] = 'octave',
     ['%.opam%.locked$'] = 'opam',
     ['%.opam%.template$'] = 'opam',
+    ['^pacman%.log'] = starsetf(function(path, bufnr)
+      return vim.uv.fs_stat(path) and 'pacmanlog' or nil
+    end),
     ['printcap'] = starsetf(function(path, bufnr)
       return require('vim.filetype.detect').printcap('print')
     end),
@@ -2557,6 +2618,15 @@ local function normalize_path(path, as_pattern)
   return normal
 end
 
+local abspath = function(x)
+  return fn.fnamemodify(x, ':p')
+end
+if fn.has('win32') == 1 then
+  abspath = function(x)
+    return (fn.fnamemodify(x, ':p'):gsub('\\', '/'))
+  end
+end
+
 --- @class vim.filetype.add.filetypes
 --- @inlinedoc
 --- @field pattern? vim.filetype.mapping
@@ -2568,7 +2638,7 @@ end
 --- Filetype mappings can be added either by extension or by filename (either
 --- the "tail" or the full file path). The full file path is checked first,
 --- followed by the file name. If a match is not found using the filename, then
---- the filename is matched against the list of |lua-patterns| (sorted by priority)
+--- the filename is matched against the list of |lua-pattern|s (sorted by priority)
 --- until a match is found. Lastly, if pattern matching does not find a
 --- filetype, then the file extension is used.
 ---
@@ -2865,7 +2935,7 @@ function M.match(args)
     name = normalize_path(name)
 
     -- First check for the simple case where the full path exists as a key
-    local path = fn.fnamemodify(name, ':p')
+    local path = abspath(name)
     ft, on_detect = dispatch(filename[path], path, bufnr)
     if ft then
       return ft, on_detect

@@ -5,7 +5,7 @@
 local util = require('gen.util')
 local fmt = string.format
 
-local DEP_API_METADATA = 'build/funcs_metadata.mpack'
+local DEP_API_METADATA = arg[1]
 local TEXT_WIDTH = 78
 
 --- @class vim.api.metadata
@@ -174,7 +174,13 @@ local function api_type(t)
   local as0 = t:match('^ArrayOf%((.*)%)')
   if as0 then
     local as = split(as0, ', ')
-    return api_type(as[1]) .. '[]'
+    local a = api_type(as[1])
+    local count = tonumber(as[2])
+    if count then
+      return ('[%s]'):format(a:rep(count, ', '))
+    else
+      return a .. '[]'
+    end
   end
 
   local d = t:match('^Dict%((.*)%)')

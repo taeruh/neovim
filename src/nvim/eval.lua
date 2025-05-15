@@ -153,7 +153,7 @@ M.funcs = {
 
     ]=],
     name = 'append',
-    params = { { 'lnum', 'integer' }, { 'text', 'string|string[]' } },
+    params = { { 'lnum', 'integer|string' }, { 'text', 'string|string[]' } },
     returns = '0|1',
     signature = 'append({lnum}, {text})',
   },
@@ -1235,7 +1235,7 @@ M.funcs = {
 
     ]=],
     name = 'cindent',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'cindent({lnum})',
   },
@@ -1253,6 +1253,33 @@ M.funcs = {
     params = { { 'win', 'integer' } },
     returns = false,
     signature = 'clearmatches([{win}])',
+  },
+  cmdcomplete_info = {
+    args = 0,
+    desc = [=[
+      Returns a |Dictionary| with information about cmdline
+      completion.  See |cmdline-completion|.
+      The items are:
+         cmdline_orig	The original command-line string before
+      		completion began.
+         pum_visible	|TRUE| if popup menu is visible.
+      		See |pumvisible()|.
+         matches	List of all completion candidates. Each item
+      		is a string.
+         selected	Selected item index.  First index is zero.
+      		Index is -1 if no item is selected (showing
+      		typed text only, or the last completion after
+      		no item is selected when using the <Up> or
+      		<Down> keys)
+
+      Returns an empty |Dictionary| if no completion was attempted,
+      if there was only one candidate and it was fully completed, or
+      if an error occurred.
+    ]=],
+    name = 'cmdcomplete_info',
+    params = {},
+    returns = 'table<string,any>',
+    signature = 'cmdcomplete_info()',
   },
   col = {
     args = { 1, 2 },
@@ -1449,6 +1476,57 @@ M.funcs = {
     params = { { 'what', 'any[]' } },
     returns = 'table',
     signature = 'complete_info([{what}])',
+  },
+  complete_match = {
+    args = { 0, 2 },
+    base = 0,
+    desc = [=[
+      Searches backward from the given position and returns a List
+      of matches according to the 'isexpand' option. When no
+      arguments are provided, uses the current cursor position.
+
+      Each match is represented as a List containing
+      [startcol, trigger_text] where:
+      - startcol: column position where completion should start,
+        or -1 if no trigger position is found. For multi-character
+        triggers, returns the column of the first character.
+      - trigger_text: the matching trigger string from 'isexpand',
+        or empty string if no match was found or when using the
+        default 'iskeyword' pattern.
+
+      When 'isexpand' is empty, uses the 'iskeyword' pattern
+      "\k\+$" to find the start of the current keyword.
+
+      Examples: >vim
+        set isexpand=.,->,/,/*,abc
+        func CustomComplete()
+          let res = complete_match()
+          if res->len() == 0 | return | endif
+          let [col, trigger] = res[0]
+          let items = []
+          if trigger == '/*'
+            let items = ['/** */']
+          elseif trigger == '/'
+            let items = ['/*! */', '// TODO:', '// fixme:']
+          elseif trigger == '.'
+            let items = ['length()']
+          elseif trigger =~ '^\->'
+            let items = ['map()', 'reduce()']
+          elseif trigger =~ '^\abc'
+            let items = ['def', 'ghk']
+          endif
+          if items->len() > 0
+            let startcol = trigger =~ '^/' ? col : col + len(trigger)
+            call complete(startcol, items)
+          endif
+        endfunc
+        inoremap <Tab> <Cmd>call CustomComplete()<CR>
+      <
+    ]=],
+    name = 'complete_match',
+    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    returns = 'table',
+    signature = 'complete_match([{lnum}, {col}])',
   },
   confirm = {
     args = { 1, 4 },
@@ -1663,7 +1741,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'cursor',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'off', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'off', 'integer' } },
     signature = 'cursor({lnum}, {col} [, {off}])',
   },
   cursor__1 = {
@@ -1898,7 +1976,7 @@ M.funcs = {
 
     ]=],
     name = 'diff_filler',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'diff_filler({lnum})',
   },
@@ -1918,7 +1996,7 @@ M.funcs = {
 
     ]=],
     name = 'diff_hlID',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     signature = 'diff_hlID({lnum}, {col})',
   },
   digraph_get = {
@@ -2717,6 +2795,7 @@ M.funcs = {
     ]=],
     name = 'finddir',
     params = { { 'name', 'string' }, { 'path', 'string' }, { 'count', 'integer' } },
+    returns = 'string|string[]',
     signature = 'finddir({name} [, {path} [, {count}]])',
   },
   findfile = {
@@ -2732,7 +2811,8 @@ M.funcs = {
 
     ]=],
     name = 'findfile',
-    params = { { 'name', 'string' }, { 'path', 'string' }, { 'count', 'any' } },
+    params = { { 'name', 'string' }, { 'path', 'string' }, { 'count', 'integer' } },
+    returns = 'string|string[]',
     signature = 'findfile({name} [, {path} [, {count}]])',
   },
   flatten = {
@@ -2915,7 +2995,7 @@ M.funcs = {
 
     ]=],
     name = 'foldclosed',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldclosed({lnum})',
   },
@@ -2931,7 +3011,7 @@ M.funcs = {
 
     ]=],
     name = 'foldclosedend',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldclosedend({lnum})',
   },
@@ -2952,7 +3032,7 @@ M.funcs = {
 
     ]=],
     name = 'foldlevel',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'foldlevel({lnum})',
   },
@@ -2993,7 +3073,7 @@ M.funcs = {
 
     ]=],
     name = 'foldtextresult',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'string',
     signature = 'foldtextresult({lnum})',
   },
@@ -3652,7 +3732,7 @@ M.funcs = {
     name = 'getcharstr',
     params = { { 'expr', '-1|0|1' }, { 'opts', 'table' } },
     returns = 'string',
-    signature = 'getcharstr([{expr}])',
+    signature = 'getcharstr([{expr} [, {opts}]])',
   },
   getcmdcomplpat = {
     desc = [=[
@@ -3804,6 +3884,7 @@ M.funcs = {
       file		file and directory names
       file_in_path	file and directory names in |'path'|
       filetype	filetype names |'filetype'|
+      filetypecmd	|:filetype| suboptions
       function	function name
       help		help subjects
       highlight	highlight groups
@@ -4126,7 +4207,7 @@ M.funcs = {
     args = { 2 },
     base = 1,
     name = 'getline',
-    params = { { 'lnum', 'integer' }, { 'end', 'true|number|string|table' } },
+    params = { { 'lnum', 'integer|string' }, { 'end', 'true|number|string|table' } },
     returns = 'string|string[]',
   },
   getloclist = {
@@ -6374,7 +6455,7 @@ M.funcs = {
 
     ]=],
     name = 'line2byte',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'line2byte({lnum})',
   },
@@ -6390,7 +6471,7 @@ M.funcs = {
 
     ]=],
     name = 'lispindent',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'lispindent({lnum})',
   },
@@ -6494,7 +6575,9 @@ M.funcs = {
     base = 1,
     desc = [=[
       Evaluate Lua expression {expr} and return its result converted
-      to Vim data structures. See |lua-eval| for more details.
+      to Vim data structures. See |lua-eval| for details.
+
+      See also |v:lua-call|.
 
     ]=],
     lua = false,
@@ -6760,7 +6843,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'mapset',
-    params = { { 'mode', 'string' }, { 'abbr', 'boolean' }, { 'dict', 'boolean' } },
+    params = { { 'mode', 'string' }, { 'abbr', 'boolean' }, { 'dict', 'table<string,any>' } },
     signature = 'mapset({mode}, {abbr}, {dict})',
   },
   mapset__1 = {
@@ -6804,7 +6887,7 @@ M.funcs = {
       <
     ]=],
     name = 'mapset',
-    params = { { 'dict', 'boolean' } },
+    params = { { 'dict', 'table<string,any>' } },
     signature = 'mapset({dict})',
   },
   match = {
@@ -7148,6 +7231,9 @@ M.funcs = {
       		given sequence.
           limit	Maximum number of matches in {list} to be
       		returned.  Zero means no limit.
+          camelcase	Use enhanced camel case scoring making results
+      		better suited for completion related to
+      		programming languages.  Defaults to v:true.
 
       If {list} is a list of dictionaries, then the optional {dict}
       argument supports the following additional items:
@@ -7200,7 +7286,7 @@ M.funcs = {
       <results in `['two one']`.
     ]=],
     name = 'matchfuzzy',
-    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'string' } },
+    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'table' } },
     signature = 'matchfuzzy({list}, {str} [, {dict}])',
   },
   matchfuzzypos = {
@@ -7229,7 +7315,7 @@ M.funcs = {
       <results in `[[{"id": 10, "text": "hello"}], [[2, 3]], [127]]`
     ]=],
     name = 'matchfuzzypos',
-    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'string' } },
+    params = { { 'list', 'any[]' }, { 'str', 'string' }, { 'dict', 'table' } },
     signature = 'matchfuzzypos({list}, {str} [, {dict}])',
   },
   matchlist = {
@@ -7551,7 +7637,7 @@ M.funcs = {
       the new directory.  The default is 0o755 (rwxr-xr-x: r/w for
       the user, readable for others).  Use 0o700 to make it
       unreadable for others.  This is used for the newly created
-      directories.  Note an umask is applied to {prot} (on Unix).
+      directories.  Note: umask is applied to {prot} (on Unix).
       Example: >vim
       	call mkdir($HOME .. "/tmp/foo/bar", "p", 0o700)
 
@@ -7746,7 +7832,7 @@ M.funcs = {
 
     ]=],
     name = 'nextnonblank',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'nextnonblank({lnum})',
   },
@@ -7894,7 +7980,7 @@ M.funcs = {
 
     ]=],
     name = 'prevnonblank',
-    params = { { 'lnum', 'integer' } },
+    params = { { 'lnum', 'integer|string' } },
     returns = 'integer',
     signature = 'prevnonblank({lnum})',
   },
@@ -8164,7 +8250,8 @@ M.funcs = {
       <      1.41
 
       You will get an overflow error |E1510|, when the field-width
-      or precision will result in a string longer than 6400 chars.
+      or precision will result in a string longer than 1 MB
+      (1024*1024 = 1048576) chars.
 
       					*E1500*
       You cannot mix positional and non-positional arguments: >vim
@@ -9770,7 +9857,7 @@ M.funcs = {
     args = { 1, 3 },
     base = 1,
     name = 'setcursorcharpos',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'off', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'off', 'integer' } },
     signature = 'setcursorcharpos({lnum}, {col} [, {off}])',
   },
   setcursorcharpos__1 = {
@@ -9787,6 +9874,7 @@ M.funcs = {
       	call cursor(4, 3)
       <positions the cursor on the first character '여'.
 
+      Returns 0 when the position could be set, -1 otherwise.
     ]=],
     name = 'setcursorcharpos',
     params = { { 'list', 'integer[]' } },
@@ -9865,7 +9953,7 @@ M.funcs = {
 
     ]=],
     name = 'setline',
-    params = { { 'lnum', 'integer' }, { 'text', 'any' } },
+    params = { { 'lnum', 'integer|string' }, { 'text', 'any' } },
     signature = 'setline({lnum}, {text})',
   },
   setloclist = {
@@ -11934,7 +12022,7 @@ M.funcs = {
       <
     ]=],
     name = 'synID',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' }, { 'trans', '0|1' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' }, { 'trans', '0|1' } },
     returns = 'integer',
     signature = 'synID({lnum}, {col}, {trans})',
   },
@@ -12041,7 +12129,7 @@ M.funcs = {
       mechanisms |syntax-vs-match|.
     ]=],
     name = 'synconcealed',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     returns = '[integer, string, integer]',
     signature = 'synconcealed({lnum}, {col})',
   },
@@ -12067,7 +12155,7 @@ M.funcs = {
       valid positions.
     ]=],
     name = 'synstack',
-    params = { { 'lnum', 'integer' }, { 'col', 'integer' } },
+    params = { { 'lnum', 'integer|string' }, { 'col', 'integer' } },
     returns = 'integer[]',
     signature = 'synstack({lnum}, {col})',
   },
@@ -13180,16 +13268,14 @@ M.funcs = {
     args = 1,
     base = 1,
     desc = [=[
-      The result is a Number, which is the height of window {nr}.
-      {nr} can be the window number or the |window-ID|.
-      When {nr} is zero, the height of the current window is
-      returned.  When window {nr} doesn't exist, -1 is returned.
-      An existing window always has a height of zero or more.
-      This excludes any window toolbar line.
-      Examples: >vim
-        echo "The current window has " .. winheight(0) .. " lines."
-      <
+      Gets the height of |window-ID| {nr} (zero for "current
+      window"), excluding any 'winbar' and 'statusline'. Returns -1
+      if window {nr} doesn't exist. An existing window always has
+      a height of zero or more.
 
+      Examples: >vim
+        echo "Current window has " .. winheight(0) .. " lines."
+      <
     ]=],
     name = 'winheight',
     params = { { 'nr', 'integer' } },
@@ -13238,7 +13324,7 @@ M.funcs = {
     ]=],
     name = 'winlayout',
     params = { { 'tabnr', 'integer' } },
-    returns = 'any[]',
+    returns = 'vim.fn.winlayout.ret',
     signature = 'winlayout([{tabnr}])',
   },
   winline = {
@@ -13372,19 +13458,21 @@ M.funcs = {
     args = 1,
     base = 1,
     desc = [=[
-      The result is a Number, which is the width of window {nr}.
-      {nr} can be the window number or the |window-ID|.
-      When {nr} is zero, the width of the current window is
-      returned.  When window {nr} doesn't exist, -1 is returned.
-      An existing window always has a width of zero or more.
-      Examples: >vim
-        echo "The current window has " .. winwidth(0) .. " columns."
+      Gets the width of |window-ID| {nr} (zero for "current
+      window"), including columns (|sign-column|, 'statuscolumn',
+      etc.). Returns -1 if window {nr} doesn't exist. An existing
+      window always has a width of zero or more.
+
+      Example: >vim
+        echo "Current window has " .. winwidth(0) .. " columns."
         if winwidth(0) <= 50
           50 wincmd |
         endif
-      <For getting the terminal or screen size, see the 'columns'
-      option.
-
+      <
+      To get the buffer "viewport", use |getwininfo()|: >vim
+          :echo getwininfo(win_getid())[0].width - getwininfo(win_getid())[0].textoff
+      <
+      To get the Nvim screen size, see the 'columns' option.
     ]=],
     name = 'winwidth',
     params = { { 'nr', 'integer' } },

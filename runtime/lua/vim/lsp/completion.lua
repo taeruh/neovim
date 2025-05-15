@@ -2,10 +2,13 @@
 --- The `vim.lsp.completion` module enables insert-mode completion driven by an LSP server. Call
 --- `enable()` to make it available through Nvim builtin completion (via the |CompleteDone| event).
 --- Specify `autotrigger=true` to activate "auto-completion" when you type any of the server-defined
---- `triggerCharacters`.
+--- `triggerCharacters`. Use CTRL-Y to select an item from the completion menu. |complete_CTRL-Y|
 ---
 --- Example: activate LSP-driven auto-completion:
 --- ```lua
+--- -- Works best with completeopt=noselect.
+--- -- Use CTRL-Y to select an item. |complete_CTRL-Y|
+--- vim.cmd[[set completeopt+=menuone,noselect,popup]]
 --- vim.lsp.start({
 ---   name = 'ts_ls',
 ---   cmd = …,
@@ -19,6 +22,14 @@
 ---   end,
 --- })
 --- ```
+---
+--- [lsp-autocompletion]()
+---
+--- The LSP `triggerCharacters` field decides when to trigger autocompletion. If you want to trigger
+--- on EVERY keypress you can either:
+--- - Extend `client.server_capabilities.completionProvider.triggerCharacters` on `LspAttach`,
+---   before you call `vim.lsp.completion.enable(… {autotrigger=true})`. See the |lsp-attach| example.
+--- - Call `vim.lsp.completion.get()` from the handler described at |compl-autocomplete|.
 
 local M = {}
 
@@ -495,14 +506,19 @@ local function trigger(bufnr, clients, ctx)
     local matches = {}
     local server_start_boundary --- @type integer?
     for client_id, response in pairs(responses) do
+      local client = lsp.get_client_by_id(client_id)
       if response.err then
-        vim.notify_once(response.err.message, vim.log.levels.WARN)
+        local msg = ('%s: %s %s'):format(
+          client and client.name or 'UNKNOWN',
+          response.err.code or 'NO_CODE',
+          response.err.message
+        )
+        vim.notify_once(msg, vim.log.levels.WARN)
       end
 
       local result = response.result
       if result then
         Context.isIncomplete = Context.isIncomplete or result.isIncomplete
-        local client = lsp.get_client_by_id(client_id)
         local encoding = client and client.offset_encoding or 'utf-16'
         local client_matches
         client_matches, server_start_boundary = M._convert_results(
@@ -536,7 +552,7 @@ local function on_insert_char_pre(handle)
       local ctx = { triggerKind = protocol.CompletionTriggerKind.TriggerForIncompleteCompletions }
       if debounce_ms == 0 then
         vim.schedule(function()
-          M.trigger({ ctx = ctx })
+          M.get({ ctx = ctx })
         end)
       else
         completion_timer = new_timer()
@@ -544,7 +560,7 @@ local function on_insert_char_pre(handle)
           debounce_ms,
           0,
           vim.schedule_wrap(function()
-            M.trigger({ ctx = ctx })
+            M.get({ ctx = ctx })
           end)
         )
       end
@@ -671,8 +687,9 @@ local function get_augroup(bufnr)
   return string.format('nvim.lsp.completion_%d', bufnr)
 end
 
+--- @inlinedoc
 --- @class vim.lsp.completion.BufferOpts
---- @field autotrigger? boolean  Default: false When true, completion triggers automatically based on the server's `triggerCharacters`.
+--- @field autotrigger? boolean  (default: false) When true, completion triggers automatically based on the server's `triggerCharacters`.
 --- @field convert? fun(item: lsp.CompletionItem): table Transforms an LSP CompletionItem to |complete-items|.
 
 ---@param client_id integer
@@ -774,7 +791,21 @@ local function disable_completions(client_id, bufnr)
   end
 end
 
---- Enables or disables completions from the given language client in the given buffer.
+--- Enables or disables completions from the given language client in the given
+--- buffer. Effects of enabling completions are:
+---
+--- - Calling |vim.lsp.completion.get()| uses the enabled clients to retrieve
+---   completion candidates
+---
+--- - Accepting a completion candidate using `<c-y>` applies side effects like
+---   expanding snippets, text edits (e.g. insert import statements) and
+---   executing associated commands. This works for completions triggered via
+---   autotrigger, omnifunc or completion.get()
+---
+--- Example: |lsp-attach| |lsp-completion|
+---
+--- Note: the behavior of `autotrigger=true` is controlled by the LSP `triggerCharacters` field. You
+--- can override it on LspAttach, see |lsp-autocompletion|.
 ---
 --- @param enable boolean True to enable, false to disable
 --- @param client_id integer Client ID
@@ -791,13 +822,27 @@ function M.enable(enable, client_id, bufnr, opts)
 end
 
 --- @inlinedoc
---- @class vim.lsp.completion.trigger.Opts
+--- @class vim.lsp.completion.get.Opts
 --- @field ctx? lsp.CompletionContext Completion context. Defaults to a trigger kind of `invoked`.
 
---- Triggers LSP completion once in the current buffer.
+--- Triggers LSP completion once in the current buffer, if LSP completion is enabled
+--- (see |lsp-attach| |lsp-completion|).
 ---
---- @param opts? vim.lsp.completion.trigger.Opts
-function M.trigger(opts)
+--- Used by the default LSP |omnicompletion| provider |vim.lsp.omnifunc()|, thus |i_CTRL-X_CTRL-O|
+--- invokes this in LSP-enabled buffers. Use CTRL-Y to select an item from the completion menu.
+--- |complete_CTRL-Y|
+---
+--- To invoke manually with CTRL-space, use this mapping:
+--- ```lua
+--- -- Use CTRL-space to trigger LSP completion.
+--- -- Use CTRL-Y to select an item. |complete_CTRL-Y|
+--- vim.keymap.set('i', '<c-space>', function()
+---   vim.lsp.completion.get()
+--- end)
+--- ```
+---
+--- @param opts? vim.lsp.completion.get.Opts
+function M.get(opts)
   opts = opts or {}
   local ctx = opts.ctx or { triggerKind = protocol.CompletionTriggerKind.Invoked }
   local bufnr = api.nvim_get_current_buf()

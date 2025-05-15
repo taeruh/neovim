@@ -1050,9 +1050,10 @@ int autocmd_register(int64_t id, event_T event, const char *pat, int patlen, int
       get_mode(last_mode);
     }
 
-    // If the event is CursorMoved, update the last cursor position
+    // If the event is CursorMoved or CursorMovedI, update the last cursor position
     // position to avoid immediately triggering the autocommand
-    if (event == EVENT_CURSORMOVED && !has_event(EVENT_CURSORMOVED)) {
+    if ((event == EVENT_CURSORMOVED && !has_event(EVENT_CURSORMOVED))
+        || (event == EVENT_CURSORMOVEDI && !has_event(EVENT_CURSORMOVEDI))) {
       last_cursormoved_win = curwin;
       last_cursormoved = curwin->w_cursor;
     }
@@ -1634,11 +1635,12 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
   // into "buf" are ignoring the event.
   if (buf == curbuf && event_names[event].event <= 0) {
     win_ignore = event_ignored(event, curwin->w_p_eiw);
-  } else if (buf != NULL && event_names[event].event <= 0) {
-    for (size_t i = 0; i < kv_size(buf->b_wininfo); i++) {
-      WinInfo *wip = kv_A(buf->b_wininfo, i);
-      if (wip->wi_win != NULL && wip->wi_win->w_buffer == buf) {
-        win_ignore = event_ignored(event, wip->wi_win->w_p_eiw);
+  } else if (buf != NULL && event_names[event].event <= 0 && buf->b_nwindows > 0) {
+    win_ignore = true;
+    FOR_ALL_TAB_WINDOWS(tp, wp) {
+      if (wp->w_buffer == buf && !event_ignored(event, wp->w_p_eiw)) {
+        win_ignore = false;
+        break;
       }
     }
   }
@@ -1725,6 +1727,7 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
     // Don't try expanding the following events.
     if (event == EVENT_CMDLINECHANGED
         || event == EVENT_CMDLINEENTER
+        || event == EVENT_CMDLINELEAVEPRE
         || event == EVENT_CMDLINELEAVE
         || event == EVENT_CMDUNDEFINED
         || event == EVENT_CURSORMOVEDC

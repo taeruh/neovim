@@ -84,6 +84,8 @@ void didset_string_options(void)
   check_str_opt(kOptCasemap, NULL);
   check_str_opt(kOptBackupcopy, NULL);
   check_str_opt(kOptBelloff, NULL);
+  check_str_opt(kOptCompletefuzzycollect, NULL);
+  check_str_opt(kOptIsexpand, NULL);
   check_str_opt(kOptCompleteopt, NULL);
   check_str_opt(kOptSessionoptions, NULL);
   check_str_opt(kOptViewoptions, NULL);
@@ -1017,6 +1019,16 @@ int expand_set_diffopt(optexpand_T *args, int *numMatches, char ***matches)
                                    numMatches,
                                    matches);
     }
+    // Within "inline:", we have a subgroup of possible options.
+    const size_t inline_len = strlen("inline:");
+    if (xp->xp_pattern - args->oe_set_arg >= (int)inline_len
+        && strncmp(xp->xp_pattern - inline_len, "inline:", inline_len) == 0) {
+      return expand_set_opt_string(args,
+                                   opt_dip_inline_values,
+                                   ARRAY_SIZE(opt_dip_inline_values) - 1,
+                                   numMatches,
+                                   matches);
+    }
     return FAIL;
   }
 
@@ -1303,6 +1315,44 @@ const char *did_set_inccommand(optset_T *args FUNC_ATTR_UNUSED)
     return e_invarg;
   }
   return did_set_str_generic(args);
+}
+
+/// The 'isexpand' option is changed.
+const char *did_set_isexpand(optset_T *args)
+{
+  char *ise = p_ise;
+  char *p;
+  bool last_was_comma = false;
+
+  if (args->os_flags & OPT_LOCAL) {
+    ise = curbuf->b_p_ise;
+  }
+
+  for (p = ise; *p != NUL;) {
+    if (*p == '\\' && p[1] == ',') {
+      p += 2;
+      last_was_comma = false;
+      continue;
+    }
+
+    if (*p == ',') {
+      if (last_was_comma) {
+        return e_invarg;
+      }
+      last_was_comma = true;
+      p++;
+      continue;
+    }
+
+    last_was_comma = false;
+    MB_PTR_ADV(p);
+  }
+
+  if (last_was_comma) {
+    return e_invarg;
+  }
+
+  return NULL;
 }
 
 /// The 'iskeyword' option is changed.
@@ -1781,6 +1831,16 @@ static const char *did_set_statustabline_rulerformat(optset_T *args, bool rulerf
   }
   const char *errmsg = NULL;
   char *s = *varp;
+
+  // reset statusline to default when setting global option and empty string is being set
+  if (args->os_idx == kOptStatusline
+      && ((args->os_flags & OPT_GLOBAL) || !(args->os_flags & OPT_LOCAL))
+      && s[0] == NUL) {
+    xfree(*varp);
+    *varp = xstrdup(get_option_default(args->os_idx, args->os_flags).data.string.data);
+    s = *varp;
+  }
+
   if (rulerformat && *s == '%') {
     // set ru_wid if 'ruf' starts with "%99("
     if (*++s == '-') {        // ignore a '-'
@@ -2121,6 +2181,8 @@ static const struct chars_tab fcs_tab[] = {
   CHARSTAB_ENTRY(&fcs_chars.msgsep,     "msgsep",    " ", NULL),
   CHARSTAB_ENTRY(&fcs_chars.eob,        "eob",       "~", NULL),
   CHARSTAB_ENTRY(&fcs_chars.lastline,   "lastline",  "@", NULL),
+  CHARSTAB_ENTRY(&fcs_chars.trunc,      "trunc",     ">", NULL),
+  CHARSTAB_ENTRY(&fcs_chars.truncrl,    "truncrl",   "<", NULL),
 };
 
 static lcs_chars_T lcs_chars;
@@ -2226,6 +2288,7 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
         }
 
         const char *s = p + tab[i].name.size + 1;
+
         if (what == kListchars && strcmp(tab[i].name.data, "multispace") == 0) {
           if (round == 0) {
             // Get length of lcs-multispace string in the first round
@@ -2246,7 +2309,6 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
                                      e_wrong_number_of_characters_for_field_str,
                                      tab[i].name.data);
             }
-            p = s;
           } else {
             int multispace_pos = 0;
             while (*s != NUL && *s != ',') {
@@ -2255,14 +2317,14 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
                 lcs_chars.multispace[multispace_pos++] = c1;
               }
             }
-            p = s;
           }
+          p = s;
           break;
         }
 
         if (what == kListchars && strcmp(tab[i].name.data, "leadmultispace") == 0) {
           if (round == 0) {
-            // get length of lcs-leadmultispace string in first round
+            // Get length of lcs-leadmultispace string in first round
             last_lmultispace = p;
             lead_multispace_len = 0;
             while (*s != NUL && *s != ',') {
@@ -2280,7 +2342,6 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
                                      e_wrong_number_of_characters_for_field_str,
                                      tab[i].name.data);
             }
-            p = s;
           } else {
             int multispace_pos = 0;
             while (*s != NUL && *s != ',') {
@@ -2289,8 +2350,8 @@ const char *set_chars_option(win_T *wp, const char *value, CharsOption what, boo
                 lcs_chars.leadmultispace[multispace_pos++] = c1;
               }
             }
-            p = s;
           }
+          p = s;
           break;
         }
 

@@ -168,6 +168,36 @@ func Test_matchparen_ignore_sh_case()
 
   let buf = RunVimInTerminal('-S '.filename, #{rows: 10})
   call VerifyScreenDump(buf, 'Test_matchparen_sh_case_1', {})
+  " Send keys one by one so that CursorMoved is triggered.
+  for c in 'A foobar'
+    call term_sendkeys(buf, c)
+    call term_wait(buf)
+  endfor
+  call VerifyScreenDump(buf, 'Test_matchparen_sh_case_2', {})
+  call StopVimInTerminal(buf)
+endfunc
+
+" Test for the WinScrolled event
+func Test_scroll_winscrolled()
+  CheckScreendump
+
+  let lines =<< trim END
+    source $VIMRUNTIME/plugin/matchparen.vim
+    set scrolloff=1
+    call setline(1, ['foobar {', '', '', '', '}'])
+    call cursor(5, 1)
+  END
+
+  let filename = 'Xmatchparen_winscrolled'
+  call writefile(lines, filename, 'D')
+
+  let buf = RunVimInTerminal('-S '.filename, #{rows: 7})
+  call VerifyScreenDump(buf, 'Test_matchparen_winscrolled1', {})
+  call term_sendkeys(buf, "\<C-E>")
+  call VerifyScreenDump(buf, 'Test_matchparen_winscrolled2', {})
+  call term_sendkeys(buf, "\<C-Y>")
+  call VerifyScreenDump(buf, 'Test_matchparen_winscrolled1', {})
+
   call StopVimInTerminal(buf)
 endfunc
 

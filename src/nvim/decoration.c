@@ -182,8 +182,9 @@ DecorSignHighlight decor_sh_from_inline(DecorHighlightInline item)
 
 void buf_put_decor(buf_T *buf, DecorInline decor, int row, int row2)
 {
-  if (decor.ext) {
+  if (decor.ext && row < buf->b_ml.ml_line_count) {
     uint32_t idx = decor.data.ext.sh_idx;
+    row2 = MIN(buf->b_ml.ml_line_count - 1, row2);
     while (idx != DECOR_ID_INVALID) {
       DecorSignHighlight *sh = &kv_A(decor_items, idx);
       buf_put_decor_sh(buf, sh, row, row2);
@@ -222,16 +223,17 @@ void buf_put_decor_sh(buf_T *buf, DecorSignHighlight *sh, int row1, int row2)
 void buf_decor_remove(buf_T *buf, int row1, int row2, int col1, DecorInline decor, bool free)
 {
   decor_redraw(buf, row1, row2, col1, decor);
-  if (decor.ext) {
+  if (decor.ext && row1 < buf->b_ml.ml_line_count) {
     uint32_t idx = decor.data.ext.sh_idx;
+    row2 = MIN(buf->b_ml.ml_line_count - 1, row2);
     while (idx != DECOR_ID_INVALID) {
       DecorSignHighlight *sh = &kv_A(decor_items, idx);
       buf_remove_decor_sh(buf, row1, row2, sh);
       idx = sh->next;
     }
-    if (free) {
-      decor_free(decor);
-    }
+  }
+  if (free) {
+    decor_free(decor);
   }
 }
 
@@ -243,8 +245,8 @@ void buf_remove_decor_sh(buf_T *buf, int row1, int row2, DecorSignHighlight *sh)
         buf_signcols_count_range(buf, row1, row2, -1, kFalse);
       } else {
         may_force_numberwidth_recompute(buf, true);
-        buf->b_signcols.resized = true;
-        buf->b_signcols.max = buf->b_signcols.count[0] = 0;
+        buf->b_signcols.count[0] = 0;
+        buf->b_signcols.max = 0;
       }
     }
   }
@@ -491,7 +493,7 @@ bool decor_redraw_start(win_T *wp, int top_row, DecorState *state)
   return true;  // TODO(bfredl): check if available in the region
 }
 
-bool decor_redraw_line(win_T *wp, int row, DecorState *state)
+static void decor_state_pack(DecorState *state)
 {
   int count = (int)kv_size(state->ranges_i);
   int const cur_end = state->current_end;
@@ -511,6 +513,11 @@ bool decor_redraw_line(win_T *wp, int row, DecorState *state)
 
   kv_size(state->ranges_i) = (size_t)count;
   state->future_begin = fut_beg;
+}
+
+bool decor_redraw_line(win_T *wp, int row, DecorState *state)
+{
+  decor_state_pack(state);
 
   if (state->row == -1) {
     decor_redraw_start(wp, row, state);
@@ -523,7 +530,7 @@ bool decor_redraw_line(win_T *wp, int row, DecorState *state)
   state->col_until = -1;
   state->eol_col = -1;
 
-  if (cur_end != 0 || fut_beg != count) {
+  if (state->current_end != 0 || state->future_begin != (int)kv_size(state->ranges_i)) {
     return true;
   }
 
@@ -1067,7 +1074,6 @@ void buf_signcols_count_range(buf_T *buf, int row1, int row2, int add, TriState 
     if (clear != kTrue && width > 0) {
       buf->b_signcols.count[width - 1]++;
       if (width > buf->b_signcols.max) {
-        buf->b_signcols.resized = true;
         buf->b_signcols.max = width;
       }
     }

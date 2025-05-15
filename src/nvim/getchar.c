@@ -2749,8 +2749,8 @@ static int vgetorpeek(bool advance)
                 }
 
                 curwin->w_wrow = curwin->w_cline_row
-                                 + curwin->w_wcol / curwin->w_width_inner;
-                curwin->w_wcol %= curwin->w_width_inner;
+                                 + curwin->w_wcol / curwin->w_view_width;
+                curwin->w_wcol %= curwin->w_view_width;
                 curwin->w_wcol += win_col_off(curwin);
                 col = 0;  // no correction needed
               } else {
@@ -2759,7 +2759,7 @@ static int vgetorpeek(bool advance)
               }
             } else if (curwin->w_p_wrap && curwin->w_wrow) {
               curwin->w_wrow--;
-              curwin->w_wcol = curwin->w_width_inner - 1;
+              curwin->w_wcol = curwin->w_view_width - 1;
               col = curwin->w_cursor.col - 1;
             }
             if (col > 0 && curwin->w_wcol > 0) {
@@ -3254,7 +3254,7 @@ bool map_execute_lua(bool may_repeat)
   Array args = ARRAY_DICT_INIT;
   nlua_call_ref(ref, NULL, args, kRetNilBool, NULL, &err);
   if (ERROR_SET(&err)) {
-    semsg_multiline("E5108: %s", err.msg);
+    semsg_multiline("emsg", "E5108: %s", err.msg);
     api_clear_error(&err);
   }
 

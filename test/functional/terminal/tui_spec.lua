@@ -271,23 +271,21 @@ describe('TUI', function()
       {}
     )
     feed_data(':call ManyErr()\r')
-    screen:expect {
-      grid = [[
-      {8:Error detected while processing function ManyErr:} |
+    screen:expect([[
+      {8:Error in function ManyErr:}                        |
       {11:line    2:}                                        |
       {8:FAIL 0}                                            |
       {8:FAIL 1}                                            |
       {8:FAIL 2}                                            |
       {10:-- More --}^                                        |
       {3:-- TERMINAL --}                                    |
-    ]],
-    }
+    ]])
 
     screen:try_resize(50, 10)
     screen:expect {
       grid = [[
       :call ManyErr()                                   |
-      {8:Error detected while processing function ManyErr:} |
+      {8:Error in function ManyErr:}                        |
       {11:line    2:}                                        |
       {8:FAIL 0}                                            |
       {8:FAIL 1}                                            |
@@ -301,7 +299,7 @@ describe('TUI', function()
     feed_data('j')
     screen:expect {
       grid = [[
-      {8:Error detected while processing function ManyErr:} |
+      {8:Error in function ManyErr:}                        |
       {11:line    2:}                                        |
       {8:FAIL 0}                                            |
       {8:FAIL 1}                                            |
@@ -342,7 +340,7 @@ describe('TUI', function()
     screen:expect {
       grid = [[
       :call ManyErr()                                   |
-      {8:Error detected while processing function ManyErr:} |
+      {8:Error in function ManyErr:}                        |
       {11:line    2:}                                        |
       {10:-- More --}^                                        |
       {3:-- TERMINAL --}                                    |
@@ -353,7 +351,7 @@ describe('TUI', function()
     screen:expect {
       grid = [[
       :call ManyErr()                                   |
-      {8:Error detected while processing function ManyErr:} |
+      {8:Error in function ManyErr:}                        |
       {11:line    2:}                                        |
       {8:FAIL 0}                                            |
       {8:FAIL 1}                                            |
@@ -440,19 +438,32 @@ describe('TUI', function()
     ]])
   end)
 
-  it('interprets <Esc>[27u as <Esc>', function()
+  it('interprets <Esc> encoded with kitty keyboard protocol', function()
     child_session:request(
       'nvim_exec2',
       [[
       nnoremap <M-;> <Nop>
       nnoremap <Esc> AESC<Esc>
+      nnoremap <C-Esc> ACtrlEsc<Esc>
+      nnoremap <D-Esc> ASuperEsc<Esc>
       nnoremap ; Asemicolon<Esc>
     ]],
       {}
     )
+    -- Works with no modifier
     feed_data('\027[27u;')
+    expect_child_buf_lines({ 'ESCsemicolon' })
+    -- Works with Ctrl modifier
+    feed_data('\027[27;5u')
+    expect_child_buf_lines({ 'ESCsemicolonCtrlEsc' })
+    -- Works with Super modifier
+    feed_data('\027[27;9u')
+    expect_child_buf_lines({ 'ESCsemicolonCtrlEscSuperEsc' })
+    -- Works with NumLock modifier (which should be the same as no modifier) #33799
+    feed_data('\027[27;129u')
+    expect_child_buf_lines({ 'ESCsemicolonCtrlEscSuperEscESC' })
     screen:expect([[
-      ESCsemicolo^n                                      |
+      ESCsemicolonCtrlEscSuperEscES^C                    |
       {4:~                                                 }|*3
       {5:[No Name] [+]                                     }|
                                                         |
@@ -461,6 +472,7 @@ describe('TUI', function()
     -- <Esc>; should be recognized as <M-;> when <M-;> is mapped
     feed_data('\027;')
     screen:expect_unchanged()
+    expect_child_buf_lines({ 'ESCsemicolonCtrlEscSuperEscESC' })
   end)
 
   it('interprets <Esc><Nul> as <M-C-Space> #17198', function()
@@ -484,6 +496,38 @@ describe('TUI', function()
       {4:~                                                 }|*3
       {5:[No Name] [+]                                     }|
       {3:-- INSERT --}                                      |
+      {3:-- TERMINAL --}                                    |
+    ]])
+    child_session:request('nvim_set_keymap', 'i', '\031', '!!!', {})
+    feed_data('\031')
+    screen:expect([[
+      {6:^G^V^M}!!!^                                         |
+      {4:~                                                 }|*3
+      {5:[No Name] [+]                                     }|
+      {3:-- INSERT --}                                      |
+      {3:-- TERMINAL --}                                    |
+    ]])
+    child_session:request('nvim_buf_delete', 0, { force = true })
+    child_session:request('nvim_set_option_value', 'laststatus', 0, {})
+    child_session:request(
+      'nvim_call_function',
+      'jobstart',
+      { { testprg('shell-test'), 'INTERACT' }, { term = true } }
+    )
+    screen:expect([[
+      interact $ ^                                       |
+                                                        |*4
+      {3:-- TERMINAL --}                                    |*2
+    ]])
+    -- mappings for C0 control codes should work in Terminal mode #33750
+    child_session:request('nvim_set_keymap', 't', '\031', '<Cmd>new<CR>', {})
+    feed_data('\031')
+    screen:expect([[
+      ^                                                  |
+      {4:~                                                 }|
+      {5:[No Name]                                         }|
+      interact $                                        |
+                                                        |*2
       {3:-- TERMINAL --}                                    |
     ]])
   end)
@@ -1198,7 +1242,6 @@ describe('TUI', function()
       pending('tty-test complains about not owning the terminal -- actions/runner#241')
     end
     screen:set_default_attr_ids({
-      [1] = { reverse = true }, -- focused cursor
       [3] = { bold = true },
       [19] = { bold = true, background = 121, foreground = 0 }, -- StatusLineTerm
     })
@@ -1368,11 +1411,10 @@ describe('TUI', function()
     feed_data('\027[200~line 1\nline 2\n')
     screen:expect([[
       foo                                               |
-                                                        |
-      {5:                                                  }|
-      {8:paste: Error executing lua: [string "<nvim>"]:4: f}|
-      {8:ake fail}                                          |
-      {10:Press ENTER or type command to continue}^           |
+      ^                                                  |
+      {4:~                                                 }|*2
+      {5:[No Name] [+]                                     }|
+      {8:paste: Lua: [string "<nvim>"]:4: fake fail}        |
       {3:-- TERMINAL --}                                    |
     ]])
     -- Remaining chunks are discarded after vim.paste() failure.
@@ -1473,8 +1515,8 @@ describe('TUI', function()
                                                         |
       {4:~                                                 }|
       {5:                                                  }|
-      {8:paste: Error executing lua: Vim:E21: Cannot make c}|
-      {8:hanges, 'modifiable' is off}                       |
+      {8:paste: Lua: Vim:E21: Cannot make changes, 'modifia}|
+      {8:ble' is off}                                       |
       {10:Press ENTER or type command to continue}^           |
       {3:-- TERMINAL --}                                    |
     ]])
@@ -2271,6 +2313,8 @@ describe('TUI', function()
       '--cmd',
       'set notermguicolors',
       '--cmd',
+      nvim_set,
+      '--cmd',
       'let start = reltime() | while v:true | if reltimefloat(reltime(start)) > 2 | break | endif | endwhile',
     }, {
       term = true,
@@ -2284,10 +2328,9 @@ describe('TUI', function()
     ]])
     screen:expect([[
       ^                         │                        |
-      {2:~                        }│{4:~                       }|*5
-      {2:~                        }│{5:[No Name]   0,0-1    All}|
+      {2:~                        }│{4:~                       }|*6
       {2:~                        }│                        |
-      {5:new                       }{6:{MATCH:<.*[/\]nvim }}|
+      {5:new                       }{6:{MATCH:<.*[/\]nvim} [-] }|
                                                         |
     ]])
   end)
@@ -2519,7 +2562,7 @@ describe('TUI', function()
       grid = [[
       ^aaaaaaaaaaaa                                      |
       aaaaaaaaaaaa                                      |*3
-      < [+] 1,1                                         |
+      <        All                                      |
                                                         |
       -- TERMINAL --                                    |
     ]],
@@ -3329,6 +3372,55 @@ describe('TUI', function()
     retry(nil, 1000, function()
       eq({ true, { osc52 = true } }, { child_session:request('nvim_eval', 'g:termfeatures') })
     end)
+
+    -- Attach another (non-TUI) UI to the child instance
+    local alt = Screen.new(nil, nil, nil, child_session)
+
+    -- Detach the first (primary) client so only the second UI is attached
+    feed_data(':detach\n')
+
+    alt:expect({ any = '%[No Name%]' })
+
+    -- osc52 should be cleared from termfeatures
+    eq({ true, {} }, { child_session:request('nvim_eval', 'g:termfeatures') })
+
+    alt:detach()
+  end)
+
+  it('does not query the terminal for OSC 52 support when disabled', function()
+    clear()
+    exec_lua([[
+      _G.query = false
+      vim.api.nvim_create_autocmd('TermRequest', {
+        callback = function(args)
+          local req = args.data.sequence
+          local sequence = req:match('^\027P%+q([%x;]+)$')
+          if sequence and vim.text.hexdecode(sequence) == 'Ms' then
+            _G.query = true
+          end
+        end,
+      })
+    ]])
+
+    local child_server = new_pipename()
+    screen = tt.setup_child_nvim({
+      '--listen',
+      child_server,
+      -- Use --clean instead of -u NONE to load the osc52 plugin
+      '--clean',
+      '--cmd',
+      'let g:termfeatures = #{osc52: v:false}',
+    }, {
+      env = {
+        VIMRUNTIME = os.getenv('VIMRUNTIME'),
+      },
+    })
+
+    screen:expect({ any = '%[No Name%]' })
+
+    local child_session = n.connect(child_server)
+    eq({ true, { osc52 = false } }, { child_session:request('nvim_eval', 'g:termfeatures') })
+    eq(false, exec_lua([[return _G.query]]))
   end)
 end)
 

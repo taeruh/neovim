@@ -124,8 +124,7 @@
 ///       - `row=0` and `col=0` if `anchor` is "SW" or "SE"
 ///         (thus like a tooltip near the buffer text).
 ///   - row: Row position in units of "screen cell height", may be fractional.
-///   - col: Column position in units of "screen cell width", may be
-///            fractional.
+///   - col: Column position in units of screen cell width, may be fractional.
 ///   - focusable: Enable focus by user actions (wincmds, mouse events).
 ///       Defaults to true. Non-focusable windows can be entered by
 ///       |nvim_set_current_win()|, or, when the `mouse` field is set to true,
@@ -158,47 +157,40 @@
 ///                     region is hidden by setting `eob` flag of
 ///                    'fillchars' to a space char, and clearing the
 ///                    |hl-EndOfBuffer| region in 'winhighlight'.
-///   - border: Style of (optional) window border. This can either be a string
-///     or an array. The string values are
-///     - "none": No border (default).
-///     - "single": A single line box.
-///     - "double": A double line box.
-///     - "rounded": Like "single", but with rounded corners ("╭" etc.).
-///     - "solid": Adds padding by a single whitespace cell.
-///     - "shadow": A drop shadow effect by blending with the background.
-///     - If it is an array, it should have a length of eight or any divisor of
-///       eight. The array will specify the eight chars building up the border
-///       in a clockwise fashion starting with the top-left corner. As an
-///       example, the double box style could be specified as:
-///       ```
-///       [ "╔", "═" ,"╗", "║", "╝", "═", "╚", "║" ].
-///       ```
-///       If the number of chars are less than eight, they will be repeated. Thus
-///       an ASCII border could be specified as
-///       ```
-///       [ "/", "-", \"\\\\\", "|" ],
-///       ```
-///       or all chars the same as
-///       ```
-///       [ "x" ].
-///       ```
-///     An empty string can be used to turn off a specific border, for instance,
+///   - border: (`string|string[]`) (defaults to 'winborder' option) Window border. The string form
+///     accepts the same values as the 'winborder' option. The array form must have a length of
+///     eight or any divisor of eight, specifying the chars that form the border in a clockwise
+///     fashion starting from the top-left corner. For example, the double-box style can be
+///     specified as:
 ///     ```
-///       [ "", "", "", ">", "", "", "", "<" ]
+///     [ "╔", "═" ,"╗", "║", "╝", "═", "╚", "║" ].
 ///     ```
-///     will only make vertical borders but not horizontal ones.
-///     By default, `FloatBorder` highlight is used, which links to `WinSeparator`
-///     when not defined.  It could also be specified by character:
+///     If fewer than eight chars are given, they will be repeated. An ASCII border could be
+///     specified as:
 ///     ```
-///       [ ["+", "MyCorner"], ["x", "MyBorder"] ].
+///     [ "/", "-", \"\\\\\", "|" ],
 ///     ```
-///   - title: Title (optional) in window border, string or list.
+///     Or one char for all sides:
+///     ```
+///     [ "x" ].
+///     ```
+///     Empty string can be used to hide a specific border. This example will show only vertical
+///     borders, not horizontal:
+///     ```
+///     [ "", "", "", ">", "", "", "", "<" ]
+///     ```
+///     By default, |hl-FloatBorder| highlight is used, which links to |hl-WinSeparator| when not
+///     defined.  Each border side can specify an optional highlight:
+///     ```
+///     [ ["+", "MyCorner"], ["x", "MyBorder"] ].
+///     ```
+///   - title: (optional) Title in window border, string or list.
 ///     List should consist of `[text, highlight]` tuples.
 ///     If string, or a tuple lacks a highlight, the default highlight group is `FloatTitle`.
 ///   - title_pos: Title position. Must be set with `title` option.
 ///     Value can be one of "left", "center", or "right".
 ///     Default is `"left"`.
-///   - footer: Footer (optional) in window border, string or list.
+///   - footer: (optional) Footer in window border, string or list.
 ///     List should consist of `[text, highlight]` tuples.
 ///     If string, or a tuple lacks a highlight, the default highlight group is `FloatFooter`.
 ///   - footer_pos: Footer position. Must be set with `footer` option.
@@ -208,9 +200,12 @@
 ///     the call.
 ///   - fixed: If true when anchor is NW or SW, the float window
 ///            would be kept fixed even if the window would be truncated.
-///   - hide: If true the floating window will be hidden.
+///   - hide: If true the floating window will be hidden and the cursor will be invisible when
+///           focused on it.
 ///   - vertical: Split vertically |:vertical|.
 ///   - split: Split direction: "left", "right", "above", "below".
+///   - _cmdline_offset: (EXPERIMENTAL) When provided, anchor the |cmdline-completion|
+///     popupmenu to this window, with an offset in screen cell width.
 ///
 /// @param[out] err Error details, if any
 ///
@@ -292,6 +287,10 @@ Window nvim_open_win(Buffer buffer, Boolean enter, Dict(win_config) *config, Err
       api_set_error(err, kErrorTypeException, "Failed to create window");
     }
     goto cleanup;
+  }
+
+  if (fconfig._cmdline_offset < INT_MAX) {
+    cmdline_win = wp;
   }
 
   // Autocommands may close `wp` or move it to another tabpage, so update and check `tp` after each
@@ -642,6 +641,11 @@ restore_curwin:
       didset_window_options(win, true);
     }
   }
+  if (fconfig._cmdline_offset < INT_MAX) {
+    cmdline_win = win;
+  } else if (win == cmdline_win && fconfig._cmdline_offset == INT_MAX) {
+    cmdline_win = NULL;
+  }
 #undef HAS_KEY_X
 }
 
@@ -774,6 +778,9 @@ Dict(win_config) nvim_win_get_config(Window window, Arena *arena, Error *err)
   const char *rel = (wp->w_floating && !config->external
                      ? float_relative_str[config->relative] : "");
   PUT_KEY_X(rv, relative, cstr_as_string(rel));
+  if (config->_cmdline_offset < INT_MAX) {
+    PUT_KEY_X(rv, _cmdline_offset, config->_cmdline_offset);
+  }
 
   return rv;
 }
@@ -944,11 +951,12 @@ static void parse_border_style(Object style, WinConfig *fconfig, Error *err)
     char chars[8][MAX_SCHAR_SIZE];
     bool shadow_color;
   } defaults[] = {
-    { "double", { "╔", "═", "╗", "║", "╝", "═", "╚", "║" }, false },
-    { "single", { "┌", "─", "┐", "│", "┘", "─", "└", "│" }, false },
-    { "shadow", { "", "", " ", " ", " ", " ", " ", "" }, true },
-    { "rounded", { "╭", "─", "╮", "│", "╯", "─", "╰", "│" }, false },
-    { "solid", { " ", " ", " ", " ", " ", " ", " ", " " }, false },
+    { opt_winborder_values[1], { "╔", "═", "╗", "║", "╝", "═", "╚", "║" }, false },
+    { opt_winborder_values[2], { "┌", "─", "┐", "│", "┘", "─", "└", "│" }, false },
+    { opt_winborder_values[3], { "", "", " ", " ", " ", " ", " ", "" }, true },
+    { opt_winborder_values[4], { "╭", "─", "╮", "│", "╯", "─", "╰", "│" }, false },
+    { opt_winborder_values[5], { " ", " ", " ", " ", " ", " ", " ", " " }, false },
+    { opt_winborder_values[6], { "┏", "━", "┓", "┃", "┛", "━", "┗", "┃" }, false },
     { NULL, { { NUL } }, false },
   };
 
@@ -1279,12 +1287,18 @@ static bool parse_win_config(win_T *wp, Dict(win_config) *config, WinConfig *fco
     }
   }
 
+  Object border_style = OBJECT_INIT;
   if (HAS_KEY_X(config, border)) {
     if (is_split) {
       api_set_error(err, kErrorTypeValidation, "non-float cannot have 'border'");
       goto fail;
     }
-    parse_border_style(config->border, fconfig, err);
+    border_style = config->border;
+  } else if (*p_winborder != NUL && (wp == NULL || !wp->w_floating)) {
+    border_style = CSTR_AS_OBJ(p_winborder);
+  }
+  if (border_style.type != kObjectTypeNil) {
+    parse_border_style(border_style, fconfig, err);
     if (ERROR_SET(err)) {
       goto fail;
     }
@@ -1315,6 +1329,10 @@ static bool parse_win_config(win_T *wp, Dict(win_config) *config, WinConfig *fco
 
   if (HAS_KEY_X(config, hide)) {
     fconfig->hide = config->hide;
+  }
+
+  if (HAS_KEY_X(config, _cmdline_offset)) {
+    fconfig->_cmdline_offset = (int)config->_cmdline_offset;
   }
 
   return true;

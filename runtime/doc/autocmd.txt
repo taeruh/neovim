@@ -400,6 +400,16 @@ CmdlineLeave			Before leaving the command-line (including
 				Note: `abort` can only be changed from false
 				to true: cannot execute an already aborted
 				cmdline by changing it to false.
+							*CmdlineLeavePre*
+CmdlineLeavePre			Just before leaving the command line, and
+				before |CmdlineLeave|.  Useful for capturing
+				completion info with |cmdcomplete_info()|, as
+				this information is cleared before
+				|CmdlineLeave| is triggered.  Triggered for
+				non-interactive use of ":" in a mapping, but
+				not when using |<Cmd>|.  Also triggered when
+				abandoning the command line by typing CTRL-C
+				or <Esc>.  <afile> is set to |cmdline-char|.
 							*CmdwinEnter*
 CmdwinEnter			After entering the command-line window.
 				Useful for setting options specifically for
@@ -477,7 +487,7 @@ CompleteDone			After Insert mode completion is done.  Either
 						- "accept": completion was
 						  accepted by |complete_CTRL-Y|.
 						- "cancel": completion was
-						  stopped by |complete_CTRL-E.
+						  stopped by |complete_CTRL-E|.
 						- "discard": completion was
 						  abandoned for other reason.
 
@@ -743,6 +753,12 @@ InsertLeavePre			Just before leaving Insert mode.  Also when
 							*InsertLeave*
 InsertLeave			Just after leaving Insert mode.  Also when
 				using CTRL-O |i_CTRL-O|.  But not for |i_CTRL-C|.
+LspAttach			See |LspAttach|
+LspDetach			See |LspDetach|
+LspNotify			See |LspNotify|
+LspProgress			See |LspProgress|
+LspRequest			See |LspRequest|
+LspTokenUpdate			See |LspTokenUpdate|
 							*MenuPopup*
 MenuPopup			Just before showing the popup menu (under the
 				right mouse button).  Useful for adjusting the
@@ -1128,9 +1144,8 @@ VimLeave			Before exiting Vim, just after writing the
 				Not triggered if |v:dying| is 2 or more.
 							*VimLeavePre*
 VimLeavePre			Before exiting Vim, just before writing the
-				.shada file.  This is executed only once,
-				if there is a match with the name of what
-				happens to be the current buffer when exiting.
+				|shada| file.  Executed only once, if the
+				pattern matches the current buffer on exit.
 				Mostly useful with a "*" pattern. >
 				   :autocmd VimLeavePre * call CleanupStuff()
 <				Use |v:dying| to detect an abnormal exit.
@@ -1180,6 +1195,13 @@ WinScrolled			After any window in the current tab page
 				scrolled the text (horizontally or vertically)
 				or changed width or height.  See
 				|win-scrolled-resized|.
+
+				Note: This can not be skipped with
+				`:noautocmd`, because it triggers after
+				processing normal commands when Vim is back in
+				the main loop.  If you want to disable this,
+				consider setting the 'eventignore' option
+				instead.
 
 				The pattern is matched against the |window-ID|
 				of the first window that scrolled or resized.

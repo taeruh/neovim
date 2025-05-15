@@ -149,6 +149,8 @@ typedef struct {
 #define w_p_wfw w_onebuf_opt.wo_wfw    // 'winfixwidth'
   int wo_pvw;
 #define w_p_pvw w_onebuf_opt.wo_pvw    // 'previewwindow'
+  OptInt wo_lhi;
+#define w_p_lhi w_onebuf_opt.wo_lhi    // 'lhistory'
   int wo_rl;
 #define w_p_rl w_onebuf_opt.wo_rl      // 'rightleft'
   char *wo_rlc;
@@ -366,7 +368,7 @@ struct file_buffer {
   int b_locked;                 // Buffer is being closed or referenced, don't
                                 // let autocommands wipe it out.
   int b_locked_split;           // Buffer is being closed, don't allow opening
-                                // a new window with it.
+                                // it in more windows.
   int b_ro_locked;              // Non-zero when the buffer can't be changed.
                                 // Used for FileChangedRO
 
@@ -556,6 +558,7 @@ struct file_buffer {
   char *b_p_fo;                 ///< 'formatoptions'
   char *b_p_flp;                ///< 'formatlistpat'
   int b_p_inf;                  ///< 'infercase'
+  char *b_p_ise;                ///< 'isexpand' local value
   char *b_p_isk;                ///< 'iskeyword'
   char *b_p_def;                ///< 'define' local value
   char *b_p_inc;                ///< 'include'
@@ -702,8 +705,8 @@ struct file_buffer {
 
   struct {
     int max;                    // maximum number of signs on a single line
+    int last_max;               // value of max when the buffer was last drawn
     int count[SIGN_SHOW_MAX];   // number of lines with number of signs
-    bool resized;               // whether max changed at start of redraw
     bool autom;                 // whether 'signcolumn' is displayed in "auto:n>1"
                                 // configured window. "b_signcols" calculation
                                 // is skipped if false.
@@ -717,6 +720,11 @@ struct file_buffer {
 
   MarkTree b_marktree[1];
   Map(uint32_t, uint32_t) b_extmark_ns[1];         // extmark namespaces
+
+  // Store the line count as it was before appending or inserting lines.
+  // Used to determine a valid range before splicing marks, when the line
+  // count has already changed.
+  int b_prev_line_count;
 
   // array of channel_id:s which have asked to receive updates for this
   // buffer.
@@ -743,18 +751,21 @@ struct file_buffer {
 // Stuff for diff mode.
 #define DB_COUNT 8     // up to four buffers can be diff'ed
 
-// Each diffblock defines where a block of lines starts in each of the buffers
-// and how many lines it occupies in that buffer.  When the lines are missing
-// in the buffer the df_count[] is zero.  This is all counted in
-// buffer lines.
-// There is always at least one unchanged line in between the diffs.
-// Otherwise it would have been included in the diff above or below it.
-// df_lnum[] + df_count[] is the lnum below the change.  When in one buffer
-// lines have been inserted, in the other buffer df_lnum[] is the line below
-// the insertion and df_count[] is zero.  When appending lines at the end of
-// the buffer, df_lnum[] is one beyond the end!
-// This is using a linked list, because the number of differences is expected
-// to be reasonable small.  The list is sorted on lnum.
+/// Each diffblock defines where a block of lines starts in each of the buffers
+/// and how many lines it occupies in that buffer.  When the lines are missing
+/// in the buffer the df_count[] is zero.  This is all counted in
+/// buffer lines.
+/// There is always at least one unchanged line in between the diffs (unless
+/// linematch is used).  Otherwise it would have been included in the diff above
+/// or below it.
+/// df_lnum[] + df_count[] is the lnum below the change.  When in one buffer
+/// lines have been inserted, in the other buffer df_lnum[] is the line below
+/// the insertion and df_count[] is zero.  When appending lines at the end of
+/// the buffer, df_lnum[] is one beyond the end!
+/// This is using a linked list, because the number of differences is expected
+/// to be reasonable small.  The list is sorted on lnum.
+/// Each diffblock also contains a cached list of inline diff of changes within
+/// the block, used for highlighting.
 typedef struct diffblock_S diff_T;
 struct diffblock_S {
   diff_T *df_next;
@@ -762,6 +773,31 @@ struct diffblock_S {
   linenr_T df_count[DB_COUNT];          // nr of inserted/changed lines
   bool is_linematched;  // has the linematch algorithm ran on this diff hunk to divide it into
                         // smaller diff hunks?
+
+  bool has_changes;     ///< has cached list of inline changes
+  garray_T df_changes;  ///< list of inline changes (diffline_change_T)
+};
+
+/// Each entry stores a single inline change within a diff block. Line numbers
+/// are recorded as relative offsets, and columns are byte offsets, not
+/// character counts.
+/// Ranges are [start,end), with the end being exclusive.
+typedef struct diffline_change_S diffline_change_T;
+struct diffline_change_S {
+  colnr_T dc_start[DB_COUNT];       ///< byte offset of start of range in the line
+  colnr_T dc_end[DB_COUNT];         ///< 1 past byte offset of end of range in line
+  int dc_start_lnum_off[DB_COUNT];  ///< starting line offset
+  int dc_end_lnum_off[DB_COUNT];    ///< end line offset
+};
+
+/// Describes a single line's list of inline changes. Use diff_change_parse() to
+/// parse this.
+typedef struct diffline_S diffline_T;
+struct diffline_S {
+  diffline_change_T *changes;
+  int num_changes;
+  int bufidx;
+  int lineoff;
 };
 
 #define SNAP_HELP_IDX   0
@@ -916,7 +952,7 @@ typedef enum {
 
 typedef enum {
   kWinStyleUnused = 0,
-  kWinStyleMinimal,  /// Minimal UI: no number column, eob markers, etc
+  kWinStyleMinimal,  ///< Minimal UI: no number column, eob markers, etc
 } WinStyle;
 
 typedef enum {
@@ -960,6 +996,7 @@ typedef struct {
   bool noautocmd;
   bool fixed;
   bool hide;
+  int _cmdline_offset;
 } WinConfig;
 
 #define WIN_CONFIG_INIT ((WinConfig){ .height = 0, .width = 0, \
@@ -973,7 +1010,8 @@ typedef struct {
                                       .style = kWinStyleUnused, \
                                       .noautocmd = false, \
                                       .hide = false, \
-                                      .fixed = false })
+                                      .fixed = false, \
+                                      ._cmdline_offset = INT_MAX })
 
 // Structure to store last cursor position and topline.  Used by check_lnums()
 // and reset_lnums().
@@ -1021,6 +1059,8 @@ typedef struct {
   schar_T msgsep;
   schar_T eob;
   schar_T lastline;
+  schar_T trunc;
+  schar_T truncrl;
 } fcs_chars_T;
 
 /// Structure which contains all information that belongs to a window.
@@ -1134,9 +1174,9 @@ struct window_S {
                      ///< this includes float border but excludes special columns
                      ///< implemented in win_line() (i.e. signs, folds, numbers)
 
-  // inner size of window, which can be overridden by external UI
-  int w_height_inner;
-  int w_width_inner;
+  // Size of the window viewport. This is the area usable to draw columns and buffer contents
+  int w_view_height;
+  int w_view_width;
   // external UI request. If non-zero, the inner size will use this.
   int w_height_request;
   int w_width_request;
@@ -1198,6 +1238,7 @@ struct window_S {
   // This is used for efficient redrawing.
   int w_lines_valid;                // number of valid entries
   wline_T *w_lines;
+  int w_lines_size;
 
   garray_T w_folds;                 // array of nested folds
   bool w_fold_manual;               // when true: some folds are opened/closed
@@ -1294,7 +1335,7 @@ struct window_S {
   int w_tagstackidx;                    // idx just below active entry
   int w_tagstacklen;                    // number of tags on stack
 
-  ScreenGrid w_grid;                    // the grid specific to the window
+  GridView w_grid;                      // area to draw on, excluding borders and winbar
   ScreenGrid w_grid_alloc;              // the grid specific to the window
   bool w_pos_changed;                   // true if window position changed
   bool w_floating;                      ///< whether the window is floating

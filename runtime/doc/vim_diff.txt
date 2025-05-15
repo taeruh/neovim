@@ -46,8 +46,9 @@ Defaults                                            *defaults* *nvim-defaults*
 - 'commentstring' defaults to ""
 - 'compatible' is always disabled
 - 'complete' excludes "i"
+- 'completeopt' defaults to "menu,popup"
 - 'define' defaults to "". The C ftplugin sets it to "^\\s*#\\s*define"
-- 'diffopt' defaults to "internal,filler,closeoff,linematch:40"
+- 'diffopt' defaults to "internal,filler,closeoff,inline:simple,linematch:40"
 - 'directory' defaults to ~/.local/state/nvim/swap// (|xdg|), auto-created
 - 'display' defaults to "lastline"
 - 'encoding' is UTF-8 (cf. 'fileencoding' for file-content encoding)
@@ -78,6 +79,7 @@ Defaults                                            *defaults* *nvim-defaults*
 - 'showcmd' is enabled
 - 'sidescroll' defaults to 1
 - 'smarttab' is enabled
+- 'spellfile' defaults to `stdpath("data").."/site/spell/"`
 - 'startofline' is disabled
 - 'switchbuf' defaults to "uselast"
 - 'tabpagemax' defaults to 50
@@ -206,6 +208,10 @@ nvim.swapfile:
 - SwapExists: Skips the swapfile prompt (sets |v:swapchoice| to "e") when the
   swapfile is owned by a running Nvim process. Shows |W325| "Ignoring
   swapfile…" message.
+
+nvim.find_exrc:
+- VimEnter: Extend 'exrc' to also search for project-local configuration files
+  in all parent directories.
 
 ==============================================================================
 New Features                                                   *nvim-features*
@@ -382,6 +388,7 @@ Options:
 - 'showcmdloc'  cannot be set to empty.
 - 'signcolumn'  can show multiple signs (dynamic or fixed columns)
 - 'statuscolumn' full control of columns using 'statusline' format
+- 'statusline' default is exposed as a statusline expression.
 - 'splitkeep'   cannot be set to empty.
 - 'tabline'     middle-click on tabpage label closes tabpage,
                 and %@Func@foo%X can call any function on mouse-click
@@ -557,7 +564,7 @@ Lua interface (|lua.txt|):
   that prints `a` and `b` on separate lines, exactly like
   `:lua print("a\nb")` .
 - `:lua error('TEST')` emits the error: >
-  E5108: Error executing lua: [string "<Vimscript compiled string>"]:1: TEST
+  E5108: Lua: [string "<Vimscript compiled string>"]:1: TEST
 <  whereas Vim emits only "TEST".
 - Lua has direct access to Nvim |API| via `vim.api`.
 - Lua package.path and package.cpath are automatically updated according to
@@ -891,5 +898,4 @@ TUI:
   at how the terminal is sending CSI.  Nvim does not issue such a sequence and
   always uses 7-bit control sequences.
 
-==============================================================================
  vim:tw=78:ts=8:sw=2:et:ft=help:norl:

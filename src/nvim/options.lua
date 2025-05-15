@@ -1123,6 +1123,25 @@ local options = {
       varname = 'p_ccv',
     },
     {
+      abbreviation = 'chi',
+      cb = 'did_set_xhistory',
+      defaults = 10,
+      desc = [=[
+        Number of quickfix lists that should be remembered for the quickfix
+        stack.  Must be between 1 and 100.  If the option is set to a value
+        that is lower than the amount of entries in the quickfix list stack,
+        entries will be removed starting from the oldest one.  If the current
+        quickfix list was removed, then the quickfix list at top of the stack
+        (the most recently created) will be used in its place.  For additional
+        info, see |quickfix-stack|.
+      ]=],
+      full_name = 'chistory',
+      scope = { 'global' },
+      short_desc = N_('number of quickfix lists stored in history'),
+      type = 'number',
+      varname = 'p_chi',
+    },
+    {
       abbreviation = 'cin',
       defaults = false,
       desc = [=[
@@ -1460,6 +1479,40 @@ local options = {
       varname = 'p_cfu',
     },
     {
+      abbreviation = 'cfc',
+      defaults = '',
+      values = { 'keyword', 'files', 'whole_line' },
+      flags = true,
+      deny_duplicates = true,
+      desc = [=[
+        A comma-separated list of strings to enable fuzzy collection for
+        specific |ins-completion| modes, affecting how matches are gathered
+        during completion.  For specified modes, fuzzy matching is used to
+        find completion candidates instead of the standard prefix-based
+        matching.  This option can contain the following values:
+
+        keyword		keywords in the current file	|i_CTRL-X_CTRL-N|
+        		keywords with flags ".", "w",	|i_CTRL-N| |i_CTRL-P|
+        		"b", "u", "U" and "k{dict}" in 'complete'
+        		keywords in 'dictionary'	|i_CTRL-X_CTRL-K|
+
+        files		file names			|i_CTRL-X_CTRL-F|
+
+        whole_line	whole lines			|i_CTRL-X_CTRL-L|
+
+        When using the 'completeopt' "longest" option value, fuzzy collection
+        can identify the longest common string among the best fuzzy matches
+        and insert it automatically.
+      ]=],
+      full_name = 'completefuzzycollect',
+      list = 'onecomma',
+      scope = { 'global' },
+      short_desc = N_('use fuzzy collection for specific completion modes'),
+      type = 'string',
+      varname = 'p_cfc',
+      flags_varname = 'cfc_flags',
+    },
+    {
       abbreviation = 'cia',
       cb = 'did_set_completeitemalign',
       defaults = 'abbr,kind,menu',
@@ -1483,7 +1536,7 @@ local options = {
     {
       abbreviation = 'cot',
       cb = 'did_set_completeopt',
-      defaults = 'menu,preview',
+      defaults = 'menu,popup',
       values = {
         'menu',
         'menuone',
@@ -1495,6 +1548,7 @@ local options = {
         'fuzzy',
         'nosort',
         'preinsert',
+        'nearest',
       },
       flags = true,
       deny_duplicates = true,
@@ -1505,10 +1559,12 @@ local options = {
            fuzzy    Enable |fuzzy-matching| for completion candidates. This
         	    allows for more flexible and intuitive matching, where
         	    characters can be skipped and matches can be found even
-        	    if the exact sequence is not typed.  Only makes a
-        	    difference how completion candidates are reduced from the
-        	    list of alternatives, but not how the candidates are
-        	    collected (using different completion types).
+        	    if the exact sequence is not typed.  Note: This option
+        	    does not affect the collection of candidate list, it only
+        	    controls how completion candidates are reduced from the
+        	    list of alternatives.  If you want to use |fuzzy-matching|
+        	    to gather more alternatives for your candidate list,
+        	    see |'completefuzzycollect'|.
 
            longest  Only insert the longest common text of the matches.  If
         	    the menu is displayed you can use CTRL-L to add more
@@ -1523,6 +1579,12 @@ local options = {
            menuone  Use the popup menu also when there is only one match.
         	    Useful when there is additional information about the
         	    match, e.g., what file it comes from.
+
+           nearest  Matches are listed based on their proximity to the cursor
+        	    position, unlike the default behavior, which only
+        	    considers proximity for matches appearing below the
+        	    cursor.  This applies only to matches from the current
+        	    buffer.  No effect if "fuzzy" is present.
 
            noinsert Do not insert any text for a match until the user selects
         	    a match from the menu.  Only works in combination with
@@ -2152,7 +2214,7 @@ local options = {
     {
       abbreviation = 'dip',
       cb = 'did_set_diffopt',
-      defaults = 'internal,filler,closeoff,linematch:40',
+      defaults = 'internal,filler,closeoff,inline:simple,linematch:40',
       -- Keep this in sync with diffopt_changed().
       values = {
         'filler',
@@ -2171,6 +2233,7 @@ local options = {
         'internal',
         'indent-heuristic',
         { 'algorithm:', { 'myers', 'minimal', 'patience', 'histogram' } },
+        { 'inline:', { 'none', 'simple', 'char', 'word' } },
         'linematch:',
       },
       deny_duplicates = true,
@@ -2235,6 +2298,24 @@ local options = {
         	indent-heuristic
         			Use the indent heuristic for the internal
         			diff library.
+
+        	inline:{text}	Highlight inline differences within a change.
+        			See |view-diffs|.  Supported values are:
+
+        			none    Do not perform inline highlighting.
+        			simple  Highlight from first different
+        				character to the last one in each
+        				line.  This is the default if no
+        				`inline:` value is set.
+        			char    Use internal diff to perform a
+        				character-wise diff and highlight the
+        				difference.
+        			word    Use internal diff to perform a
+        				|word|-wise diff and highlight the
+        				difference.  Non-alphanumeric
+        				multi-byte characters such as emoji
+        				and CJK characters are considered
+        				individual words.
 
         	internal	Use the internal diff library.  This is
         			ignored when 'diffexpr' is set.  *E960*
@@ -2663,21 +2744,29 @@ local options = {
       abbreviation = 'ex',
       defaults = false,
       desc = [=[
-        Automatically execute .nvim.lua, .nvimrc, and .exrc files in the
-        current directory, if the file is in the |trust| list. Use |:trust| to
-        manage trusted files. See also |vim.secure.read()|.
+        Enables project-local configuration. Nvim will execute any .nvim.lua,
+        .nvimrc, or .exrc file found in the |current-directory| and all parent
+        directories (ordered upwards), if the files are in the |trust| list.
+        Use |:trust| to manage trusted files. See also |vim.secure.read()|.
 
         Compare 'exrc' to |editorconfig|:
         - 'exrc' can execute any code; editorconfig only specifies settings.
         - 'exrc' is Nvim-specific; editorconfig works in other editors.
 
+        To achieve project-local LSP configuration:
+        1. Enable 'exrc'.
+        2. Place LSP configs at ".nvim/lsp/*.lua" in your project root.
+        3. Create ".nvim.lua" in your project root directory with this line: >lua
+             vim.cmd[[set runtimepath+=.nvim]]
+        <
         This option cannot be set from a |modeline| or in the |sandbox|, for
         security reasons.
       ]=],
       full_name = 'exrc',
       scope = { 'global' },
       secure = true,
-      short_desc = N_('read .nvimrc and .exrc in the current directory'),
+      short_desc = N_('read project-local configuration in parent directories'),
+      tags = { 'project-config', 'workspace-config' },
       type = 'boolean',
       varname = 'p_exrc',
     },
@@ -2954,8 +3043,8 @@ local options = {
       defaults = '',
       deny_duplicates = true,
       desc = [=[
-        Characters to fill the statuslines, vertical separators and special
-        lines in the window.
+        Characters to fill the statuslines, vertical separators, special
+        lines in the window and truncated text in the |ins-completion-menu|.
         It is a comma-separated list of items.  Each item has a name, a colon
         and the value of that item: |E1511|
 
@@ -2979,6 +3068,9 @@ local options = {
           msgsep	' '		message separator 'display'
           eob		'~'		empty lines at the end of a buffer
           lastline	'@'		'display' contains lastline/truncate
+          trunc		'>'		truncated text in the
+        				|ins-completion-menu|.
+          truncrl	'<'		same as "trunc" in 'rightleft' mode
 
         Any one that is omitted will fall back to the default.
 
@@ -2993,9 +3085,8 @@ local options = {
         Example: >vim
             set fillchars=stl:\ ,stlnc:\ ,vert:│,fold:·,diff:-
         <
-        For the "stl", "stlnc", "foldopen", "foldclose" and "foldsep" items
-        single-byte and multibyte characters are supported.  But double-width
-        characters are not supported. |E1512|
+        All items support single-byte and multibyte characters.  But
+        double-width characters are not supported. |E1512|
 
         The highlighting used for these items:
           item		highlight group ~
@@ -3010,9 +3101,15 @@ local options = {
           vertright	WinSeparator		|hl-WinSeparator|
           verthoriz	WinSeparator		|hl-WinSeparator|
           fold		Folded			|hl-Folded|
+          foldopen	FoldColumn		|hl-FoldColumn|
+          foldclose	FoldColumn		|hl-FoldColumn|
+          foldsep	FoldColumn		|hl-FoldColumn|
           diff		DiffDelete		|hl-DiffDelete|
           eob		EndOfBuffer		|hl-EndOfBuffer|
           lastline	NonText			|hl-NonText|
+          trunc		one of the many Popup menu highlighting groups like
+        		|hl-PmenuSel|
+          truncrl	same as "trunc"
       ]=],
       expand_cb = 'expand_set_chars_option',
       full_name = 'fillchars',
@@ -4370,7 +4467,7 @@ local options = {
         <
         Also used for the |gf| command if an unmodified file name can't be
         found.  Allows doing "gf" on the name after an 'include' statement.
-        Also used for |<cfile>|.
+        Note: Not used for |<cfile>|.
 
         If the expression starts with s: or |<SID>|, then it is replaced with
         the script ID (|local-function|). Example: >vim
@@ -4535,6 +4632,33 @@ local options = {
       short_desc = N_('No description'),
       type = 'boolean',
       immutable = true,
+    },
+    {
+      abbreviation = 'ise',
+      cb = 'did_set_isexpand',
+      defaults = '',
+      deny_duplicates = true,
+      desc = [=[
+        Defines characters and patterns for completion in insert mode.  Used
+        by the |complete_match()| function to determine the starting position
+        for completion.  This is a comma-separated list of triggers.  Each
+        trigger can be:
+        - A single character like "." or "/"
+        - A sequence of characters like "->", "/*", or "/**"
+
+        Note: Use "\\," to add a literal comma as trigger character, see
+        |option-backslash|.
+
+        Examples: >vim
+            set isexpand=.,->,/*,\\,
+        <
+      ]=],
+      full_name = 'isexpand',
+      list = 'onecomma',
+      scope = { 'global', 'buf' },
+      short_desc = N_('Defines characters and patterns for completion in insert mode'),
+      type = 'string',
+      varname = 'p_ise',
     },
     {
       abbreviation = 'isf',
@@ -4787,7 +4911,9 @@ local options = {
     {
       abbreviation = 'kp',
       defaults = {
-        if_true = ':Man',
+        condition = 'MSWIN',
+        if_true = ':help',
+        if_false = ':Man',
         doc = '":Man", Windows: ":help"',
       },
       desc = [=[
@@ -4962,6 +5088,23 @@ local options = {
       short_desc = N_("don't redraw while executing macros"),
       type = 'boolean',
       varname = 'p_lz',
+    },
+    {
+      abbreviation = 'lhi',
+      cb = 'did_set_xhistory',
+      defaults = 10,
+      desc = [=[
+        Like 'chistory', but for the location list stack associated with a
+        window.  If the option is changed in either the location list window
+        itself or the window that is associated with the location list stack,
+        the new value will also be applied to the other one.  This means this
+        value will always be the same for a given location list window and its
+        corresponding window.  See |quickfix-stack| for additional info.
+      ]=],
+      full_name = 'lhistory',
+      scope = { 'win' },
+      short_desc = N_('number of location lists stored in history'),
+      type = 'number',
     },
     {
       abbreviation = 'lbr',
@@ -6372,6 +6515,23 @@ local options = {
       varname = 'p_ph',
     },
     {
+      abbreviation = 'pmw',
+      defaults = 0,
+      desc = [=[
+        Maximum width for the popup menu (|ins-completion-menu|).  When zero,
+        there is no maximum width limit, otherwise the popup menu will never be
+        wider than this value.  Truncated text will be indicated by "trunc"
+        value of 'fillchars' option.
+
+        This option takes precedence over 'pumwidth'.
+      ]=],
+      full_name = 'pummaxwidth',
+      scope = { 'global' },
+      short_desc = N_('maximum width of the popup menu'),
+      type = 'number',
+      varname = 'p_pmw',
+    },
+    {
       abbreviation = 'pw',
       defaults = 15,
       desc = [=[
@@ -7168,8 +7328,8 @@ local options = {
         '	Maximum number of previously edited files for which the marks
         	are remembered.  This parameter must always be included when
         	'shada' is non-empty.
-        	Including this item also means that the |jumplist| and the
-        	|changelist| are stored in the shada file.
+        	If non-zero, then the |jumplist| and the |changelist| are also
+        	stored in the shada file.
         						*shada-/*
         /	Maximum number of items in the search pattern history to be
         	saved.  If non-zero, then the previous search and substitute
@@ -7511,7 +7671,7 @@ local options = {
     },
     {
       abbreviation = 'stmp',
-      defaults = true,
+      defaults = false,
       desc = [=[
         When on, use temp files for shell commands.  When off use a pipe.
         When using a pipe is not possible temp files are used anyway.
@@ -7934,9 +8094,11 @@ local options = {
         Override the 'ignorecase' option if the search pattern contains upper
         case characters.  Only used when the search pattern is typed and
         'ignorecase' option is on.  Used for the commands "/", "?", "n", "N",
-        ":g" and ":s".  Not used for "*", "#", "gd", tag search, etc.  After
-        "*" and "#" you can make 'smartcase' used by doing a "/" command,
-        recalling the search pattern from history and hitting <Enter>.
+        ":g" and ":s" and when filtering matches for the completion menu
+        |compl-states|.
+        Not used for "*", "#", "gd", tag search, etc.  After "*" and "#" you
+        can make 'smartcase' used by doing a "/" command, recalling the search
+        pattern from history and hitting <Enter>.
       ]=],
       full_name = 'smartcase',
       scope = { 'global' },
@@ -8089,11 +8251,10 @@ local options = {
         It may also be a comma-separated list of names.  A count before the
         |zg| and |zw| commands can be used to access each.  This allows using
         a personal word list file and a project word list file.
-        When a word is added while this option is empty Vim will set it for
-        you: Using the first directory in 'runtimepath' that is writable.  If
-        there is no "spell" directory yet it will be created.  For the file
-        name the first language name that appears in 'spelllang' is used,
-        ignoring the region.
+        When a word is added while this option is empty Nvim will use
+        (and auto-create) `stdpath('data')/site/spell/`. For the file name the
+        first language name that appears in 'spelllang' is used, ignoring the
+        region.
         The resulting ".spl" file will be used for spell checking, it does not
         have to appear in 'spelllang'.
         Normally one file is used for all regions, but you can add the region
@@ -8414,10 +8575,16 @@ local options = {
     {
       abbreviation = 'stl',
       cb = 'did_set_statusline',
-      defaults = '',
+      defaults = table.concat({
+        '%<',
+        '%f %h%w%m%r ',
+        '%=',
+        "%{% &showcmdloc == 'statusline' ? '%-10.S ' : '' %}",
+        "%{% exists('b:keymap_name') ? '<'..b:keymap_name..'> ' : '' %}",
+        "%{% &ruler ? ( &rulerformat == '' ? '%-14.(%l,%c%V%) %P' : &rulerformat ) : '' %}",
+      }),
       desc = [=[
-        When non-empty, this option determines the content of the status line.
-        Also see |status-line|.
+        Sets the |status-line|.
 
         The option consists of printf style '%' items interspersed with
         normal text.  Each status line item is of the form:
@@ -9016,7 +9183,8 @@ local options = {
       cb = 'did_set_tagfunc',
       defaults = '',
       desc = [=[
-        This option specifies a function to be used to perform tag searches.
+        This option specifies a function to be used to perform tag searches
+        (including |taglist()|).
         The function gets the tag pattern and should return a List of matching
         tags.  See |tag-function| for an explanation of how to write the
         function and an example.  The value can be the name of a function, a
@@ -10024,55 +10192,65 @@ local options = {
       flags = true,
       deny_duplicates = false,
       desc = [=[
-        Completion mode that is used for the character specified with
-        'wildchar'.  It is a comma-separated list of up to four parts.  Each
-        part specifies what to do for each consecutive use of 'wildchar'.  The
-        first part specifies the behavior for the first use of 'wildchar',
-        The second part for the second use, etc.
+        Completion mode used for the character specified with 'wildchar'.
+        This option is a comma-separated list of up to four parts,
+        corresponding to the first, second, third, and fourth presses of
+        'wildchar'.  Each part is a colon-separated list of completion
+        behaviors, which are applied simultaneously during that phase.
 
-        Each part consists of a colon separated list consisting of the
-        following possible values:
-        ""		Complete only the first match.
-        "full"		Complete the next full match.  After the last match,
-        		the original string is used and then the first match
-        		again.  Will also start 'wildmenu' if it is enabled.
-        "longest"	Complete till longest common string.  If this doesn't
-        		result in a longer string, use the next part.
-        "list"		When more than one match, list all matches.
-        "lastused"	When completing buffer names and more than one buffer
-        		matches, sort buffers by time last used (other than
-        		the current buffer).
-        "noselect"	Do not pre-select first menu item and start 'wildmenu'
-        		if it is enabled.
-        When there is only a single match, it is fully completed in all cases
-        except when "noselect" is present.
+        The possible behavior values are:
+        ""		Only complete (insert) the first match.  No further
+        		matches are cycled or listed.
+        "full"		Complete the next full match.  Cycles through all
+        		matches, returning to the original input after the
+        		last match.  If 'wildmenu' is enabled, it will be
+        		shown.
+        "longest"	Complete to the longest common substring.  If this
+        		doesn't extend the input, the next 'wildmode' part is
+        		used.
+        "list"		If multiple matches are found, list all of them.
+        "lastused"	When completing buffer names, sort them by most
+        		recently used (excluding the current buffer).  Only
+        		applies to buffer name completion.
+        "noselect"	If 'wildmenu' is enabled, show the menu but do not
+        		preselect the first item.
+        If only one match exists, it is completed fully, unless "noselect" is
+        specified.
 
-        Examples of useful colon-separated values:
-        "longest:full"	Like "longest", but also start 'wildmenu' if it is
-        		enabled.  Will not complete to the next full match.
-        "list:full"	When more than one match, list all matches and
-        		complete first match.
-        "list:longest"	When more than one match, list all matches and
-        		complete till longest common string.
-        "list:lastused" When more than one buffer matches, list all matches
-        		and sort buffers by time last used (other than the
-        		current buffer).
+        Some useful combinations of colon-separated values:
+        "longest:full"		Start with the longest common string and show
+        			'wildmenu' (if enabled).  Does not cycle
+        			through full matches.
+        "list:full"		List all matches and complete first match.
+        "list:longest"		List all matches and complete till the longest
+        			common prefix.
+        "list:lastused"		List all matches.  When completing buffers,
+        			sort them by most recently used (excluding the
+        			current buffer).
+        "noselect:lastused"	Do not preselect the first item in 'wildmenu'
+        			if it is active.  When completing buffers,
+        			sort them by most recently used (excluding the
+        			current buffer).
 
         Examples: >vim
         	set wildmode=full
-        <	Complete first full match, next match, etc.  (the default) >vim
+        <	Complete full match on every press (default behavior) >vim
         	set wildmode=longest,full
-        <	Complete longest common string, then each full match >vim
+        <	First press: longest common substring
+        Second press: cycle through full matches >vim
         	set wildmode=list:full
-        <	List all matches and complete each full match >vim
+        <	First press: list all matches and complete the first one >vim
         	set wildmode=list,full
-        <	List all matches without completing, then each full match >vim
+        <	First press: list matches only
+        Second press: complete full matches >vim
         	set wildmode=longest,list
-        <	Complete longest common string, then list alternatives >vim
+        <	First press: longest common substring
+        Second press: list all matches >vim
         	set wildmode=noselect:full
-        <	Display 'wildmenu' without completing, then each full match >vim
+        <	First press: show 'wildmenu' without completing or selecting
+        Second press: cycle full matches >vim
         	set wildmode=noselect:lastused,full
-        <	Same as above, but sort buffers by time last used.
+        <	Same as above, but buffer matches are sorted by time last used
         More info here: |cmdline-completion|.
       ]=],
       full_name = 'wildmode',
@@ -10185,6 +10363,26 @@ local options = {
       scope = { 'win' },
       short_desc = N_('Controls transparency level for floating windows'),
       type = 'number',
+    },
+    {
+      defaults = { if_true = '' },
+      values = { '', 'double', 'single', 'shadow', 'rounded', 'solid', 'bold', 'none' },
+      desc = [=[
+        Defines the default border style of floating windows. The default value
+        is empty, which is equivalent to "none". Valid values include:
+        - "bold": Bold line box.
+        - "double": Double-line box.
+        - "none": No border.
+        - "rounded": Like "single", but with rounded corners ("╭" etc.).
+        - "shadow": Drop shadow effect, by blending with the background.
+        - "single": Single-line box.
+        - "solid": Adds padding by a single whitespace cell.
+      ]=],
+      full_name = 'winborder',
+      scope = { 'global' },
+      short_desc = N_('border of floating window'),
+      type = 'string',
+      varname = 'p_winborder',
     },
     {
       abbreviation = 'wi',

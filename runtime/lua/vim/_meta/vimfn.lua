@@ -85,7 +85,7 @@ function vim.fn.api_info() end
 ---   let failed = append(0, ["Chapter 1", "the beginning"])
 --- <
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param text string|string[]
 --- @return 0|1
 function vim.fn.append(lnum, text) end
@@ -907,7 +907,7 @@ function vim.fn.chdir(dir) end
 ---
 --- To get or set indent of lines in a string, see |vim.text.indent()|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.cindent(lnum) end
 
@@ -918,6 +918,28 @@ function vim.fn.cindent(lnum) end
 ---
 --- @param win? integer
 function vim.fn.clearmatches(win) end
+
+--- Returns a |Dictionary| with information about cmdline
+--- completion.  See |cmdline-completion|.
+--- The items are:
+---    cmdline_orig  The original command-line string before
+---     completion began.
+---    pum_visible  |TRUE| if popup menu is visible.
+---     See |pumvisible()|.
+---    matches  List of all completion candidates. Each item
+---     is a string.
+---    selected  Selected item index.  First index is zero.
+---     Index is -1 if no item is selected (showing
+---     typed text only, or the last completion after
+---     no item is selected when using the <Up> or
+---     <Down> keys)
+---
+--- Returns an empty |Dictionary| if no completion was attempted,
+--- if there was only one candidate and it was fully completed, or
+--- if an error occurred.
+---
+--- @return table<string,any>
+function vim.fn.cmdcomplete_info() end
 
 --- The result is a Number, which is the byte index of the column
 --- position given with {expr}.
@@ -1087,6 +1109,53 @@ function vim.fn.complete_check() end
 --- @return table
 function vim.fn.complete_info(what) end
 
+--- Searches backward from the given position and returns a List
+--- of matches according to the 'isexpand' option. When no
+--- arguments are provided, uses the current cursor position.
+---
+--- Each match is represented as a List containing
+--- [startcol, trigger_text] where:
+--- - startcol: column position where completion should start,
+---   or -1 if no trigger position is found. For multi-character
+---   triggers, returns the column of the first character.
+--- - trigger_text: the matching trigger string from 'isexpand',
+---   or empty string if no match was found or when using the
+---   default 'iskeyword' pattern.
+---
+--- When 'isexpand' is empty, uses the 'iskeyword' pattern
+--- "\k\+$" to find the start of the current keyword.
+---
+--- Examples: >vim
+---   set isexpand=.,->,/,/*,abc
+---   func CustomComplete()
+---     let res = complete_match()
+---     if res->len() == 0 | return | endif
+---     let [col, trigger] = res[0]
+---     let items = []
+---     if trigger == '/*'
+---       let items = ['/** */']
+---     elseif trigger == '/'
+---       let items = ['/*! */', '// TODO:', '// fixme:']
+---     elseif trigger == '.'
+---       let items = ['length()']
+---     elseif trigger =~ '^\->'
+---       let items = ['map()', 'reduce()']
+---     elseif trigger =~ '^\abc'
+---       let items = ['def', 'ghk']
+---     endif
+---     if items->len() > 0
+---       let startcol = trigger =~ '^/' ? col : col + len(trigger)
+---       call complete(startcol, items)
+---     endif
+---   endfunc
+---   inoremap <Tab> <Cmd>call CustomComplete()<CR>
+--- <
+---
+--- @param lnum? integer
+--- @param col? integer
+--- @return table
+function vim.fn.complete_match(lnum, col) end
+
 --- confirm() offers the user a dialog, from which a choice can be
 --- made.  It returns the number of the choice.  For the first
 --- choice this is 1.
@@ -1244,7 +1313,7 @@ function vim.fn.ctxset(context, index) end
 --- @return any
 function vim.fn.ctxsize() end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col? integer
 --- @param off? integer
 --- @return any
@@ -1441,7 +1510,7 @@ function vim.fn.did_filetype() end
 --- line, "'m" mark m, etc.
 --- Returns 0 if the current window is not in diff mode.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.diff_filler(lnum) end
 
@@ -1455,7 +1524,7 @@ function vim.fn.diff_filler(lnum) end
 --- The highlight ID can be used with |synIDattr()| to obtain
 --- syntax information about the highlighting.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return any
 function vim.fn.diff_hlID(lnum, col) end
@@ -2128,7 +2197,7 @@ function vim.fn.filter(expr1, expr2) end
 --- @param name string
 --- @param path? string
 --- @param count? integer
---- @return any
+--- @return string|string[]
 function vim.fn.finddir(name, path, count) end
 
 --- Just like |finddir()|, but find a file instead of a directory.
@@ -2140,8 +2209,8 @@ function vim.fn.finddir(name, path, count) end
 ---
 --- @param name string
 --- @param path? string
---- @param count? any
---- @return any
+--- @param count? integer
+--- @return string|string[]
 function vim.fn.findfile(name, path, count) end
 
 --- Flatten {list} up to {maxdepth} levels.  Without {maxdepth}
@@ -2282,7 +2351,7 @@ function vim.fn.fnamemodify(fname, mods) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldclosed(lnum) end
 
@@ -2292,7 +2361,7 @@ function vim.fn.foldclosed(lnum) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldclosedend(lnum) end
 
@@ -2307,7 +2376,7 @@ function vim.fn.foldclosedend(lnum) end
 --- {lnum} is used like with |getline()|.  Thus "." is the current
 --- line, "'m" mark m, etc.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.foldlevel(lnum) end
 
@@ -2338,7 +2407,7 @@ function vim.fn.foldtext() end
 --- line, "'m" mark m, etc.
 --- Useful when exporting folded text, e.g., to HTML.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return string
 function vim.fn.foldtextresult(lnum) end
 
@@ -3026,6 +3095,7 @@ function vim.fn.getcmdwintype() end
 --- file    file and directory names
 --- file_in_path  file and directory names in |'path'|
 --- filetype  filetype names |'filetype'|
+--- filetypecmd  |:filetype| suboptions
 --- function  function name
 --- help    help subjects
 --- highlight  highlight groups
@@ -3284,7 +3354,7 @@ function vim.fn.getjumplist(winnr, tabnr) end
 --- @return string
 function vim.fn.getline(lnum, end_) end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param end_ true|number|string|table
 --- @return string|string[]
 function vim.fn.getline(lnum, end_) end
@@ -5170,7 +5240,7 @@ function vim.fn.line(expr, winid) end
 --- |getline()|.  When {lnum} is invalid -1 is returned.
 --- Also see |byte2line()|, |go| and |:goto|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.line2byte(lnum) end
 
@@ -5180,7 +5250,7 @@ function vim.fn.line2byte(lnum) end
 --- relevant.  {lnum} is used just like in |getline()|.
 --- When {lnum} is invalid, -1 is returned.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.lispindent(lnum) end
 
@@ -5479,7 +5549,7 @@ function vim.fn.mapnew(expr1, expr2) end
 
 --- @param mode string
 --- @param abbr? boolean
---- @param dict? boolean
+--- @param dict? table<string,any>
 --- @return any
 function vim.fn.mapset(mode, abbr, dict) end
 
@@ -5519,7 +5589,7 @@ function vim.fn.mapset(mode, abbr, dict) end
 ---   endfor
 --- <
 ---
---- @param dict boolean
+--- @param dict table<string,any>
 --- @return any
 function vim.fn.mapset(dict) end
 
@@ -5815,6 +5885,9 @@ function vim.fn.matchend(expr, pat, start, count) end
 ---     given sequence.
 ---     limit  Maximum number of matches in {list} to be
 ---     returned.  Zero means no limit.
+---     camelcase  Use enhanced camel case scoring making results
+---     better suited for completion related to
+---     programming languages.  Defaults to v:true.
 ---
 --- If {list} is a list of dictionaries, then the optional {dict}
 --- argument supports the following additional items:
@@ -5868,7 +5941,7 @@ function vim.fn.matchend(expr, pat, start, count) end
 ---
 --- @param list any[]
 --- @param str string
---- @param dict? string
+--- @param dict? table
 --- @return any
 function vim.fn.matchfuzzy(list, str, dict) end
 
@@ -5895,7 +5968,7 @@ function vim.fn.matchfuzzy(list, str, dict) end
 ---
 --- @param list any[]
 --- @param str string
---- @param dict? string
+--- @param dict? table
 --- @return any
 function vim.fn.matchfuzzypos(list, str, dict) end
 
@@ -6174,7 +6247,7 @@ function vim.fn.min(expr) end
 --- the new directory.  The default is 0o755 (rwxr-xr-x: r/w for
 --- the user, readable for others).  Use 0o700 to make it
 --- unreadable for others.  This is used for the newly created
---- directories.  Note an umask is applied to {prot} (on Unix).
+--- directories.  Note: umask is applied to {prot} (on Unix).
 --- Example: >vim
 ---   call mkdir($HOME .. "/tmp/foo/bar", "p", 0o700)
 ---
@@ -6352,7 +6425,7 @@ function vim.fn.msgpackparse(data) end
 --- {lnum} is used like with |getline()|.
 --- See also |prevnonblank()|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.nextnonblank(lnum) end
 
@@ -6451,7 +6524,7 @@ function vim.fn.pow(x, y) end
 --- {lnum} is used like with |getline()|.
 --- Also see |nextnonblank()|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @return integer
 function vim.fn.prevnonblank(lnum) end
 
@@ -6717,7 +6790,8 @@ function vim.fn.prevnonblank(lnum) end
 --- <      1.41
 ---
 --- You will get an overflow error |E1510|, when the field-width
---- or precision will result in a string longer than 6400 chars.
+--- or precision will result in a string longer than 1 MB
+--- (1024*1024 = 1048576) chars.
 ---
 ---           *E1500*
 --- You cannot mix positional and non-positional arguments: >vim
@@ -8060,7 +8134,7 @@ function vim.fn.setcmdline(str, pos) end
 --- @return any
 function vim.fn.setcmdpos(pos) end
 
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col? integer
 --- @param off? integer
 --- @return any
@@ -8075,6 +8149,8 @@ function vim.fn.setcursorcharpos(lnum, col, off) end
 --- <positions the cursor on the third character '세'. >vim
 ---   call cursor(4, 3)
 --- <positions the cursor on the first character '여'.
+---
+--- Returns 0 when the position could be set, -1 otherwise.
 ---
 --- @param list integer[]
 --- @return any
@@ -8139,7 +8215,7 @@ function vim.fn.setfperm(fname, mode) end
 ---
 --- <Note: The '[ and '] marks are not set.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param text any
 --- @return any
 function vim.fn.setline(lnum, text) end
@@ -9895,7 +9971,7 @@ function vim.fn.swapname(buf) end
 ---   echo synIDattr(synID(line("."), col("."), 1), "name")
 --- <
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @param trans 0|1
 --- @return integer
@@ -9991,7 +10067,7 @@ function vim.fn.synIDtrans(synID) end
 --- since syntax and matching highlighting are two different
 --- mechanisms |syntax-vs-match|.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return [integer, string, integer]
 function vim.fn.synconcealed(lnum, col) end
@@ -10014,7 +10090,7 @@ function vim.fn.synconcealed(lnum, col) end
 --- character in a line and the first column in an empty line are
 --- valid positions.
 ---
---- @param lnum integer
+--- @param lnum integer|string
 --- @param col integer
 --- @return integer[]
 function vim.fn.synstack(lnum, col) end
@@ -10878,14 +10954,13 @@ function vim.fn.wincol() end
 --- @return string
 function vim.fn.windowsversion() end
 
---- The result is a Number, which is the height of window {nr}.
---- {nr} can be the window number or the |window-ID|.
---- When {nr} is zero, the height of the current window is
---- returned.  When window {nr} doesn't exist, -1 is returned.
---- An existing window always has a height of zero or more.
---- This excludes any window toolbar line.
+--- Gets the height of |window-ID| {nr} (zero for "current
+--- window"), excluding any 'winbar' and 'statusline'. Returns -1
+--- if window {nr} doesn't exist. An existing window always has
+--- a height of zero or more.
+---
 --- Examples: >vim
----   echo "The current window has " .. winheight(0) .. " lines."
+---   echo "Current window has " .. winheight(0) .. " lines."
 --- <
 ---
 --- @param nr integer
@@ -10929,7 +11004,7 @@ function vim.fn.winheight(nr) end
 --- <
 ---
 --- @param tabnr? integer
---- @return any[]
+--- @return vim.fn.winlayout.ret
 function vim.fn.winlayout(tabnr) end
 
 --- The result is a Number, which is the screen line of the cursor
@@ -11037,18 +11112,21 @@ function vim.fn.winrestview(dict) end
 --- @return vim.fn.winsaveview.ret
 function vim.fn.winsaveview() end
 
---- The result is a Number, which is the width of window {nr}.
---- {nr} can be the window number or the |window-ID|.
---- When {nr} is zero, the width of the current window is
---- returned.  When window {nr} doesn't exist, -1 is returned.
---- An existing window always has a width of zero or more.
---- Examples: >vim
----   echo "The current window has " .. winwidth(0) .. " columns."
+--- Gets the width of |window-ID| {nr} (zero for "current
+--- window"), including columns (|sign-column|, 'statuscolumn',
+--- etc.). Returns -1 if window {nr} doesn't exist. An existing
+--- window always has a width of zero or more.
+---
+--- Example: >vim
+---   echo "Current window has " .. winwidth(0) .. " columns."
 ---   if winwidth(0) <= 50
 ---     50 wincmd |
 ---   endif
---- <For getting the terminal or screen size, see the 'columns'
---- option.
+--- <
+--- To get the buffer "viewport", use |getwininfo()|: >vim
+---     :echo getwininfo(win_getid())[0].width - getwininfo(win_getid())[0].textoff
+--- <
+--- To get the Nvim screen size, see the 'columns' option.
 ---
 --- @param nr integer
 --- @return integer
